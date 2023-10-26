@@ -61,7 +61,7 @@ MODULE parameters
     R_star        = (10**MESAfile(39,model))*R_sun
     nu_max_star   = MESAfile(63,model)
     delta_nu_star = MESAfile(61,model)
-    dt            = MESAfile(4,model)*365.*24.*60.*60.*0.1!*1.e-4!*5.e-4 !s
+    dt            = MESAfile(4,model)*365.*24.*60.*60.!*1.e-3!*5.e-4 !s
 
     !lmax = getlmax(summaryfile,MESAfile,model)
 

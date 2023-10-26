@@ -83,13 +83,13 @@ function getj_l0(sumarray,freq) result(jvalue)
 end function getj_l0
 
 
-subroutine printarray(array, m)
+subroutine printarray(array, m,name)
   implicit none
   real (DP), intent(in) :: array(m)
-  integer, intent(in) :: m
+  integer, intent(in) :: m,name
   integer :: j
       do j=1,m
-        write (*,*) array(j)
+        write (name,*) array(j)
       end do
 end subroutine printarray
 
@@ -157,6 +157,7 @@ subroutine getradiativeR(ri,rf,filearray)
   end do
 
 end subroutine getradiativeR
+
 
 
 

@@ -360,7 +360,8 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   !c(1:nci,1:ncj,1:nck), s(1:nsi,1:nsj) supply dummy storage used by the relaxation 
   !code; the minimum dimensions must satisfy: nci=ne, ncj=ne-nb+1, nck=m+1, nsi=ne, nsj=2*ne+1.
   SUBROUTINE solvde(itmax,conv,slowc,scalv,indexv,ne,nb,m, &
-    & y,nyj,nyk,c,nci,ncj,nck,s,nsi,nsj) 
+    & y,nyj,nyk,c,nci,ncj,nck,s,nsi,nsj)
+    IMPLICIT NONE 
     INTEGER :: itmax,m,nb,nci,ncj,nck,ne,nsi,nsj,&
     & nyj,nyk,indexv(nyj),NMAX 
     REAL (DP) :: conv,slowc,c(nci,ncj,nck),s(nsi,nsj), &
@@ -445,7 +446,8 @@ SUBROUTINE inverse_matrix(a,n,np,y)
 
   END SUBROUTINE solvde
 
-  SUBROUTINE bksub(ne,nb,jf,k1,k2,c,nci,ncj,nck) 
+  SUBROUTINE bksub(ne,nb,jf,k1,k2,c,nci,ncj,nck)
+    IMPLICIT NONE 
     INTEGER :: jf,k1,k2,nb,nci,ncj,nck,ne 
     REAL (DP) :: c(nci,ncj,nck) 
     !Backsubstitution, used internally by solvde. 
@@ -479,6 +481,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
 
 
   SUBROUTINE pinvs(ie1,ie2,je1,jsf,jc1,k,c,nci,ncj,nck,s,nsi,nsj)
+    IMPLICIT NONE
     INTEGER :: ie1,ie2,jc1,je1,jsf,k,nci,ncj,nck,nsi,nsj,NMAX 
     REAL (DP) :: c(nci,ncj,nck),s(nsi,nsj) 
     PARAMETER (NMAX=10) 
@@ -559,7 +562,8 @@ SUBROUTINE inverse_matrix(a,n,np,y)
 
 
   SUBROUTINE red(iz1,iz2,jz1,jz2,jm1,jm2,jmf,ic1,jc1,jcf,kc, &
-    & c,nci,ncj,nck,s,nsi,nsj) 
+    & c,nci,ncj,nck,s,nsi,nsj)
+    IMPLICIT NONE 
     INTEGER :: ic1,iz1,iz2,jc1,jcf,jm1,jm2,jmf,jz1,jz2,kc,nci,ncj,&
      nck,nsi,nsj 
     REAL (DP) :: c(nci,ncj,nck),s(nsi,nsj) 
@@ -600,7 +604,8 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   !last point in the mesh. If k=k1 or k>k2, the block involves the boundary conditions
   !at the first or final points; otherwise the block acts on FDEs coupling variables
   !at points k-1, k.
-  SUBROUTINE difeq(k,k1,k2,jsf,is1,isf,indexv,ne,s,nsi,nsj,y,nyj,nyk) 
+  SUBROUTINE difeq(k,k1,k2,jsf,is1,isf,indexv,ne,s,nsi,nsj,y,nyj,nyk)
+    IMPLICIT NONE 
     INTEGER :: is1,isf,jsf,k,k1,k2,ne,nsi,nsj,nyj,nyk,indexv(nyj),M 
     REAL (DP) :: s(nsi,nsj),y(nyj,nyk) 
     COMMON /sfrcom/ x,h,mm,n,c2,anorm !Warning: Padding of 8 bytes required before ‘c2’ in COMMON ‘sfrcom’ at (1); reorder elements or use ‘-fno-align-commons’

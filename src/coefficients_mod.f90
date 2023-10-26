@@ -32,7 +32,7 @@ MODULE coefficient_equations
     real (DP) ,dimension(m) :: dr,r, omega,Lr, firstterm,secondterm,thirdterm,alph
     real (DP) ,dimension(m) :: zeta0,zeta1,zeta2,zeta3,kr2,A,G_func, um,dois,tres,quatro
     real (DP) ,dimension(m) :: x,xi_r,Gamma_1,omega_rot,P,rho,V,V_2,As
-    real (DP) :: omega_R, K0,K1,K2, l, m_mode,freq, dev1tot, S_l2
+    real (DP) :: omega_R, K0,K1,K2, l, m_mode,freq, dev1tot
     integer :: i
 
     l      = summaryfile(8,k)
@@ -169,9 +169,9 @@ MODULE coefficient_equations
     real (DP), intent(inout) :: coeff(:)
     integer, intent(in) :: m,k
     real (DP) ,dimension(m) :: r, omega,Lr,As,c_1,N2
-    real (DP) ,dimension(m) :: zeta0,zeta1,zeta2,zeta3,kr2,A,G_func
-    real (DP) ,dimension(m) :: x,xi_r,Gamma_1,omega_rot,Pr,rho,V_2,nabla,nabla_ad,ds_dr,cs2,alph,V
-    real (DP) :: omega_R, K0,K1,K2, l, m_mode,freq
+    real (DP) ,dimension(m) :: kr2,A
+    real (DP) ,dimension(m) :: x,xi_r,Gamma_1,omega_rot,Pr,rho,V_2,cs2,alph,V
+    real (DP) :: omega_R, l, m_mode,freq
     integer :: i
 
     l      = summaryfile(8,k)
@@ -461,7 +461,7 @@ MODULE coefficient_equations
     implicit none
     real (DP), intent(in) :: array(:,:),summaryfile(:,:),MESAprofile(:,:)
     real (DP), intent(inout) :: coeff(:)
-    real (DP) :: r, alph,kr2,N2,xi_r,As,c_1,rho,omega_R,l,m_mode,freq,S_l2
+    real (DP) :: r, alph,kr2,N2,xi_r,As,c_1,rho,omega_R,l,m_mode,freq
     integer, intent(in) :: j
     integer :: i,m
     real (DP) ::V_2,nabla,nabla_ad,T,ds_dr

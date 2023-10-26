@@ -16,6 +16,7 @@ program computeflux
     use math_functions
     !use meridionalcirculation_mod
     use rotationprofile_mod
+    use numerical_scheme
 
   IMPLICIT NONE
   
@@ -26,7 +27,7 @@ program computeflux
   integer, allocatable :: jarray(:)
   real (DP), allocatable :: summaryfile(:,:), detailfile(:,:), MESAhistory(:,:), MESAprofile(:,:)
   real (DP), allocatable :: coeff(:), F_total(:,:),omega(:),smalldetailfile(:,:)
-  real (DP) :: amp_ml, dummyvector(5), matrix(5,5), vector(5),result(5)
+  real (DP) :: amp_ml, dummyvector(5)!, matrix(5,5), vector(5),result(5)
   character(35) :: dummy
 
   print*, 'Give initial, final model number, and delta model (e.g., 0 500 10):'
