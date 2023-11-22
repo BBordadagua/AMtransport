@@ -9,12 +9,14 @@
 
 MODULE math_functions
   use parameters
+  use data_handling
   implicit none
   
   !define public subroutines and functions
   public :: spline,splint,interpolate
   public :: ludcmp,lubksb,inverse_matrix,tridag,invert_tridagmatrix
   public :: bksub,difeq,pinvs,red,solvde !solve Relaxation scheme
+  public :: multiply_matrix_vector_triag
   
   contains
 
@@ -147,10 +149,13 @@ SUBROUTINE ludcmp(a,n,np,indx,d)
   INTEGER, intent(in) :: n,np
   INTEGER, intent(inout) :: indx(n)
   REAL (DP), intent(inout) :: a(np,np),d 
-  INTEGER :: i,imax,j,k,NMAX 
+  INTEGER :: i,imax,j,k!,NMAX 
   REAL (DP) :: TINY
-  PARAMETER (NMAX=10000,TINY=1.0e-20)  !Largest expected n, and a small number.
+  PARAMETER (TINY=1.0e-20)  !Largest expected n, and a small number.
+  !PARAMETER (NMAX=10000,TINY=1.0e-20)  !Largest expected n, and a small number.
   REAL (DP) :: aamax,dum,sum,vv(n)!vv(NMAX) !vv stores the implicit scaling of each row. 
+
+  imax = 0 !! changed
 
   d=1. !No row interchanges yet.
   do i=1,n !Loop over rows to get the implicit scaling information. 
@@ -261,7 +266,7 @@ SUBROUTINE tridag(a,b,c,r,u,n)
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: n
   INTEGER :: J!,NMAX
-  REAL (DP), INTENT(IN) :: a(n),b(n),c(n),r(n)
+  REAL (DP), INTENT(IN) :: a(:),b(:),c(:),r(n)
   REAL (DP), INTENT(INOUT) :: u(n)
   !PARAMETER (NMAX=5000) !Parameter: NMAX is the maximum expected value of n. 
   REAL (DP) :: bet,gam(n)!,gam(NMAX) !One vector of workspace, gam is needed. 
@@ -294,23 +299,35 @@ END SUBROUTINE tridag
 SUBROUTINE invert_tridagmatrix(matrix,n,u,r)
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: n
-  REAL (DP), INTENT(IN) :: r(n),matrix(n,n)
-  REAL (DP), INTENT(INOUT) :: u(n)
-  REAL (DP) :: a(n),b(n),c(n)
+  REAL (DP), INTENT(IN) :: r(:),matrix(:,:) !matrix(n,n)
+  REAL (DP), INTENT(INOUT) :: u(:)
+  REAL (DP), allocatable :: a(:),b(:),c(:)
   INTEGER :: i
 
+  allocate(a(n),b(n),c(n))
+  !do i=1,n
+  !  b(i) = matrix(i,i)
+  !  if (i/=1) then
+  !    a(i) = matrix(i-1,i)
+  !  end if
+  !  if (i/=n) then
+  !    c(i) = matrix(i+1,i)
+  !  end if
+  !end do
+
   do i=1,n
-    b(i) = matrix(i,i)
+    b(i) = matrix(2,i)
     if (i/=1) then
-      a(i) = matrix(i-1,i)
+      a(i) = matrix(1,i)
     end if
     if (i/=n) then
-      c(i) = matrix(i+1,i)
+      c(i) = matrix(3,i)
     end if
   end do
-  
 
   call tridag(a,b,c,r,u,n) 
+
+  deallocate(a,b,c)
 
 
 END SUBROUTINE invert_tridagmatrix
@@ -360,18 +377,20 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   !c(1:nci,1:ncj,1:nck), s(1:nsi,1:nsj) supply dummy storage used by the relaxation 
   !code; the minimum dimensions must satisfy: nci=ne, ncj=ne-nb+1, nck=m+1, nsi=ne, nsj=2*ne+1.
   SUBROUTINE solvde(itmax,conv,slowc,scalv,indexv,ne,nb,m, &
-    & y,nyj,nyk,c,nci,ncj,nck,s,nsi,nsj)
-    IMPLICIT NONE 
-    INTEGER :: itmax,m,nb,nci,ncj,nck,ne,nsi,nsj,&
-    & nyj,nyk,indexv(nyj),NMAX 
-    REAL (DP) :: conv,slowc,c(nci,ncj,nck),s(nsi,nsj), &
-    & scalv(nyj),y(nyj,nyk) 
-    PARAMETER (NMAX=10) !Largest expected value of ne.
-    INTEGER :: ic1,ic2,ic3,ic4,it,j,j1,j2,j3,j4,j5,j6,j7,j8, &
-    & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(NMAX) 
-    REAL (DP) :: err,errj,fac,vmax,vz,ermax(NMAX)
+    & y,c,s,MESAfile,oldMESAfile,delta_t,nu_diff)
+    implicit none 
+    real (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff
+    real (DP), intent(in) :: conv,slowc,scalv(:)
+    real (DP), intent(inout) :: c(:,:,:),s(:,:),y(:,:)
+    integer, intent(in) :: itmax,m,ne,nb,indexv(:)
+    integer :: NMAX 
+    parameter (NMAX=10) !Largest expected value of ne.
+    integer :: ic1,ic2,ic3,ic4,it,j,j1,j2,j3,j4,j5,j6,j7,j8, &
+    & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(NMAX)
+    real (DP) :: err,errj,fac,vmax,vz,ermax(NMAX)
 
-    k1=1 !Setuprowandcolumnmarkers. 
+
+    k1=1 !Set up row and column markers. 
     k2=m 
     nvars=ne*m 
     j1=1 
@@ -392,25 +411,25 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     do it=1,itmax 
       !Primary iteration loop. 
       k=k1 !Boundary conditions at first point. 
-      call difeq(k,k1,k2,j9,ic3,ic4,indexv,ne,s,nsi,nsj,y,nyj,nyk) 
-      call pinvs(ic3,ic4,j5,j9,jc1,k1,c,nci,ncj,nck,s,nsi,nsj) 
+      call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
+      call pinvs(ic3,ic4,j5,j9,jc1,k1,c,s) 
       do k=k1+1,k2 
         !Finite difference equations at all point pairs. 
         kp=k-1 
-        call difeq(k,k1,k2,j9,ic1,ic4,indexv,ne,s,nsi,nsj,y,nyj,nyk) 
-        call red(ic1,ic4,j1,j2,j3,j4,j9,ic3,jc1,jcf,kp,c,nci,ncj,nck,s,nsi,nsj) 
-        call pinvs(ic1,ic4,j3,j9,jc1,k,c,nci,ncj,nck,s,nsi,nsj) 
+        call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
+        call red(ic1,ic4,j1,j2,j3,j4,j9,ic3,jc1,jcf,kp,c,s) 
+        call pinvs(ic1,ic4,j3,j9,jc1,k,c,s) 
       enddo 
       k=k2+1 !Final boundary conditions. 
-      call difeq(k,k1,k2,j9,ic1,ic2,indexv,ne,s,nsi,nsj,y,nyj,nyk) 
-      call red(ic1,ic2,j5,j6,j7,j8,j9,ic3,jc1,jcf,k2,c,nci,ncj,nck,s,nsi,nsj) 
-      call pinvs(ic1,ic2,j7,j9,jcf,k2+1,c,nci,ncj,nck,s,nsi,nsj)
-      call bksub(ne,nb,jcf,k1,k2,c,nci,ncj,nck) !Backsubstitution. 
+      call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
+      call red(ic1,ic2,j5,j6,j7,j8,j9,ic3,jc1,jcf,k2,c,s) 
+      call pinvs(ic1,ic2,j7,j9,jcf,k2+1,c,s)
+      call bksub(ne,nb,jcf,k1,k2,c) !Backsubstitution. 
       err=0. 
       do j=1,ne !Convergence check, accumulate average error. 
         jv=indexv(j) 
         errj=0. 
-        km=0 
+        km=0 !! this can't be zero
         vmax=0. 
         do k=k1,k2 !Find point with largest error, for each dependent variable. 
           vz=abs(c(jv,1,k)) 
@@ -432,12 +451,14 @@ SUBROUTINE inverse_matrix(a,n,np,y)
           y(j,k)=y(j,k)-fac*c(jv,1,k) 
         enddo
       enddo 
-      write(*,100) it,err,fac 
+      !write(*,100) it,err,fac 
+      write(*,100) 'it',it,'   err',err,'   fac',fac 
       !Summary of corrections for this step. Point with largest error for each 
       !variable can be monitored by writing out kmax and ermax. 
       if(err.lt.conv) return 
     enddo
-    100 format(1x,i4,2f12.6)
+    !100 format(1x,i4,2f12.6)
+    100 format(A3,i4,A6,ES14.4,A6,ES14.3)
 
     print*, 'itmax exceeded in solvde' !Convergence failed. 
     stop
@@ -446,13 +467,13 @@ SUBROUTINE inverse_matrix(a,n,np,y)
 
   END SUBROUTINE solvde
 
-  SUBROUTINE bksub(ne,nb,jf,k1,k2,c,nci,ncj,nck)
+  !Backsubstitution, used internally by solvde. 
+  SUBROUTINE bksub(ne,nb,jf,k1,k2,c)
     IMPLICIT NONE 
-    INTEGER :: jf,k1,k2,nb,nci,ncj,nck,ne 
-    REAL (DP) :: c(nci,ncj,nck) 
-    !Backsubstitution, used internally by solvde. 
-    INTEGER :: i,im,j,k,kp,nbf 
-    REAL (DP) :: xx 
+    integer, intent(in) :: ne,nb,k1,k2,jf
+    integer :: i,im,j,k,kp,nbf
+    real (DP), intent(inout) :: c(:,:,:) !c(nci,ncj,nck) 
+    real (DP) :: xx
     
     nbf=ne-nb 
     im=1 
@@ -479,16 +500,20 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     return 
   END SUBROUTINE bksub
 
-
-  SUBROUTINE pinvs(ie1,ie2,je1,jsf,jc1,k,c,nci,ncj,nck,s,nsi,nsj)
+  !Diagonalize the square subsection of the s matrix, and store 
+  !the recursion coefficients in c; used internally by solvde. 
+  SUBROUTINE pinvs(ie1,ie2,je1,jsf,jc1,k,c,s)
     IMPLICIT NONE
-    INTEGER :: ie1,ie2,jc1,je1,jsf,k,nci,ncj,nck,nsi,nsj,NMAX 
-    REAL (DP) :: c(nci,ncj,nck),s(nsi,nsj) 
+    integer, intent(in) :: ie1,ie2,je1,jsf,jc1,k
+    real (DP), intent(inout) :: c(:,:,:),s(:,:)!c(nci,ncj,nck),s(nsi,nsj)
+    INTEGER :: NMAX 
     PARAMETER (NMAX=10) 
-    !Diagonalize the square subsection of the s matrix, and store 
-    !the recursion coefficients in c; used internally by solvde. 
     INTEGER :: i,icoff,id,ipiv,irow,j,jcoff,je2,jp,jpiv,js1,indxr(NMAX) 
     REAL (DP) :: big,dum,piv,pivinv,pscl(NMAX)
+
+    ipiv=0  !! added
+    jpiv=0  !! added
+    jp = 0  !! added
 
     je2=je1+ie2-ie1 
     js1=je2+1 
@@ -556,22 +581,21 @@ SUBROUTINE inverse_matrix(a,n,np,y)
         c(irow,j+jcoff,k)=s(i,j) 
       enddo
     enddo
+    write(1000,*) c(:,1,1)
     return 
   END SUBROUTINE pinvs
 
 
-
-  SUBROUTINE red(iz1,iz2,jz1,jz2,jm1,jm2,jmf,ic1,jc1,jcf,kc, &
-    & c,nci,ncj,nck,s,nsi,nsj)
+  !Reduce columns jz1-jz2 of the s matrix, using previous results as 
+  !stored in the c matrix. Only columns jm1-jm2,jmf are affected by 
+  !the prior results. red is used internally by solvde.
+  SUBROUTINE red(iz1,iz2,jz1,jz2,jm1,jm2,jmf,ic1,jc1,jcf,kc,c,s)
     IMPLICIT NONE 
-    INTEGER :: ic1,iz1,iz2,jc1,jcf,jm1,jm2,jmf,jz1,jz2,kc,nci,ncj,&
-     nck,nsi,nsj 
-    REAL (DP) :: c(nci,ncj,nck),s(nsi,nsj) 
-     !Reduce columns jz1-jz2 of the s matrix, using previous results as 
-     !stored in the c matrix. Only columns jm1-jm2,jmf are affected by 
-     !the prior results. red is used internally by solvde. 
-    INTEGER :: i,ic,j,l,loff 
-    REAL (DP) :: vx 
+    integer, intent(in) :: ic1,iz1,iz2,jc1,jcf,jm1,jm2,jmf,jz1,jz2,kc
+    real (DP), intent(in) :: c(:,:,:)
+    real (DP), intent(inout) :: s(:,:)
+    integer :: i,ic,j,l,loff 
+    real (DP) :: vx 
      
     loff=jc1-jm1 
     ic=ic1 
@@ -594,7 +618,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       ic=ic+1 
     enddo 
     return 
-  END SUBROUTINE RED
+  END SUBROUTINE red
 
 
   !! Rewrite for the specific problem !!
@@ -604,65 +628,103 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   !last point in the mesh. If k=k1 or k>k2, the block involves the boundary conditions
   !at the first or final points; otherwise the block acts on FDEs coupling variables
   !at points k-1, k.
-  SUBROUTINE difeq(k,k1,k2,jsf,is1,isf,indexv,ne,s,nsi,nsj,y,nyj,nyk)
+  !Returns matrix s(i,j) for solvde. 
+  SUBROUTINE difeq(k,k1,k2,jsf,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff)
     IMPLICIT NONE 
-    INTEGER :: is1,isf,jsf,k,k1,k2,ne,nsi,nsj,nyj,nyk,indexv(nyj),M 
-    REAL (DP) :: s(nsi,nsj),y(nyj,nyk) 
-    COMMON /sfrcom/ x,h,mm,n,c2,anorm !Warning: Padding of 8 bytes required before ‘c2’ in COMMON ‘sfrcom’ at (1); reorder elements or use ‘-fno-align-commons’
-    PARAMETER (M=41) 
-    !Returns matrix s(i,j) for solvde. 
-    INTEGER :: mm,n 
-    REAL (DP) :: anorm,c2,h,temp,temp2,x(M) 
+    REAL (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff,y(:,:)
+    INTEGER, intent(in) :: jsf,k,k1,k2,indexv(:)
+    REAL (DP), intent(inout) :: s(:,:)
+    !INTEGER :: mm,n,i
+    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf!,r_dot
+    real (DP) :: C1,C2,C3,C4,C5,C6
+     
+
+    if(k.eq.k1) then !Boundary condition at first point. 
+      delta_nu   = MESAfile(7,k) !!! caution division by zero!!!
+      radius     = MESAfile(2,k)
+      rho        = MESAfile(3,k)
+      g_surf     = MESAfile(6,k)
+      nu         = MESAfile(7,k) 
+      radius_old = oldMESAfile(2,k)
+      omega_old  = oldMESAfile(4,k)
+      C6 = (4.*PI*MESAfile(6,k)*MESAfile(3,k)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      
+    !else if(k.gt.k2) then !Boundary conditions at last point. 
+    else !Interior point. 
+      delta_nu   = MESAfile(7,k) - MESAfile(7,k-1)
+      radius     = (MESAfile(2,k) + MESAfile(2,k-1))/2.
+      rho        = (MESAfile(3,k) + MESAfile(3,k-1))/2.
+      g_surf     = (MESAfile(6,k) + MESAfile(6,k-1))/2.
+      nu         = (MESAfile(7,k) + MESAfile(7,k-1))/2.
+      radius_old = (oldMESAfile(2,k) + oldMESAfile(2,k-1))/2.
+      omega_old  = (oldMESAfile(4,k) + oldMESAfile(4,k-1))/2.
+      C6 = (4.*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+    end if
+    C1 = radius**2 /delta_t
+    C2 = radius_old**2 *omega_old /delta_t
+    C3 = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
+    C4 = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
+    C5 = (4.*PI*MESAfile(6,k)*MESAfile(3,k)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
     
     if(k.eq.k1) then !Boundary condition at first point. 
-      if(mod(n+mm,2).eq.1)then 
-        s(3,3+indexv(1))=1. !Equation (17.4.32). 
-        s(3,3+indexv(2))=0. 
-        s(3,3+indexv(3))=0. 
-        s(3,jsf)=y(1,1) !Equation (17.4.31). 
-      else 
-        s(3,3+indexv(1))=0. !Equation (17.4.32). 
-        s(3,3+indexv(2))=1. 
-        s(3,3+indexv(3))=0. 
-        s(3,jsf)=y(2,1) !Equation (17.4.31). 
-      endif 
+      s(1,2+indexv(1))=0.
+      s(1,2+indexv(2))=1.
+      s(1,jsf)=y(2,k1)
+      !call printMatrix(s,2,5,1000)
+      print*,s(1,jsf), jsf
     else if(k.gt.k2) then !Boundary conditions at last point. 
-      s(1,3+indexv(1))=-(y(3,M)-c2)/(2.*(mm+1.)) !Equation (17.4.35). 
-      s(1,3+indexv(2))=1. 
-      s(1,3+indexv(3))=-y(1,M)/(2.*(mm+1.)) 
-      s(1,jsf)=y(2,M)-(y(3,M)-c2)*y(1,M)/(2.*(mm+1.)) !Equation (17.4.33). 
-      s(2,3+indexv(1))=1. !Equation (17.4.36). 
-      s(2,3+indexv(2))=0.
-      s(2,3+indexv(3))=0. 
-      s(2,jsf)=y(1,M)-anorm !Equation (17.4.34). 
+      s(2,2+indexv(1))=0.
+      s(2,2+indexv(2))=1.
+      s(2,jsf)=y(2,k2)
+      call printMatrix(s,2,5,2000)
     else !Interior point. 
-      s(1,indexv(1))=-1. !Equation (17.4.28). 
-      s(1,indexv(2))=-.5*h 
-      s(1,indexv(3))=0. 
-      s(1,3+indexv(1))=1. 
-      s(1,3+indexv(2))=-.5*h 
-      s(1,3+indexv(3))=0. 
-      temp=h/(1.-(x(k)+x(k-1))**2*.25) 
-      temp2=.5*(y(3,k)+y(3,k-1))-c2*.25*(x(k)+x(k-1))**2 
-      s(2,indexv(1))=temp*temp2*.5 !Equation (17.4.29). 
-      s(2,indexv(2))=-1.-.5*temp*(mm+1.)*(x(k)+x(k-1)) 
-      s(2,indexv(3))=.25*temp*(y(1,k)+y(1,k-1)) 
-      s(2,3+indexv(1))=s(2,indexv(1)) 
-      s(2,3+indexv(2))=2.+s(2,indexv(2)) 
-      s(2,3+indexv(3))=s(2,indexv(3)) 
-      s(3,indexv(1))=0. !Equation (17.4.30). 
-      s(3,indexv(2))=0. 
-      s(3,indexv(3))=-1. 
-      s(3,3+indexv(1))=0. 
-      s(3,3+indexv(2))=0. 
-      s(3,3+indexv(3))=1. 
-      s(1,jsf)=y(1,k)-y(1,k-1)-.5*h*(y(2,k)+y(2,k-1)) !Equation (17.4.23). 
-      s(2,jsf)=y(2,k)-y(2,k-1)-temp*((x(k)+x(k-1))&
-      & *.5*(mm+1.)*(y(2,k)+y(2,k-1))-temp2* .5*(y(1,k)+y(1,k-1))) !Equation (17.4.24).
-      s(3,jsf)=y(3,k)-y(3,k-1) !Equation (17.4.27). 
+      s(1,indexv(1))=0.5d0*C1  !E1
+      s(1,indexv(2))=C6
+      s(1,2+indexv(1))= 0.5d0*C1
+      s(1,2+indexv(2))=-C5
+
+      s(2,indexv(1))=C4    !E2
+      s(2,indexv(2))=0.5d0 
+      s(2,2+indexv(1))=-C4
+      s(2,2+indexv(2))=0.5d0
+
+      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)&
+      &-0.5d0*C3*(y(1,k)+y(1,k-1)) !E1
+      s(2,jsf)=0.5d0*(y(2,k)+y(2,k-1))-C4*(y(1,k)-y(1,k-1)) !E2
+      call printMatrix(s,2,5,3000)
     endif 
+
+    
     return 
+
   END SUBROUTINE difeq
+
+  !! multiplication of matrix and vector v with a tridiagonal matrix
+  !! input are 3 arrays that define the diagonal d, below diagonal b and above diagonal a of matrix
+  function multiply_matrix_vector_triag(matrix_triag,v,m) result(r)
+    implicit none
+    real (DP), intent(in) :: v(:),matrix_triag(:,:)
+    integer, intent(in) :: m
+    real (DP) :: r(m)
+    real (DP), allocatable :: d(:),a(:),b(:)
+    integer :: i
+
+    allocate(d(m),a(m),b(m))
+    b(:) = matrix_triag(1,:)
+    d(:) = matrix_triag(2,:)
+    a(:) = matrix_triag(3,:)
+
+    !! boundary conditions
+    r(1) = d(1)*v(1) + a(1)*v(2)
+    r(m) = b(m)*v(m-1) + d(m)*v(m)
+
+    do i=2,m-1
+      r(i) = b(i)*v(i-1) + d(i)*v(i) + a(i)*v(i+1)
+    end do
+
+    deallocate(a,b,d)
+
+  end function multiply_matrix_vector_triag
 
 
 

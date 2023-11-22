@@ -21,7 +21,7 @@ MODULE coefficient_equations
   public :: derive,compute_J,compute_K0,compute_K1,compute_K2,derive_2ndorder,calculate_gwaves,calculate_gwaves_simplified
   public :: compute_zeta0,compute_zeta1,compute_zeta2,compute_zeta3,computeA,computeG,compute_cs2
   public :: calculate_simplifiedeq,compute_cp,alpha,computeKr2,getL,getOmega
-  public :: dev_toymodel, toymodel, derive_moreprecision
+  public :: derive_moreprecision
   contains
 
   subroutine calculate_gwaves(array,m,summaryfile,k,coeff,MESAprofile)
@@ -478,7 +478,7 @@ MODULE coefficient_equations
     omega_rot = getOmega(MESAprofile,array,m)
     
     if ( j == 369 ) then
-      open(20,action='write',file='output/detail.l'//trim(string(int(l)))//'.j'//trim(string(j))//'.txt')
+      open(305,action='write',file='output/detail.l'//trim(string(int(l)))//'.j'//trim(string(j))//'.txt')
     end if
     do i=1,m
     !put the variables into variables
@@ -503,17 +503,17 @@ MODULE coefficient_equations
 
 
       !coeff(i) = (2.*abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *omega_rot(i)*alph*N2
-      coeff(i) = (abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *omega_rot(i)*alph*N2
+      coeff(i) = 2.*(abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *alph*N2!*omega_rot(i)
     
       if (j == 369) then
-        write (20,*) r, coeff(i)
-        !write (305,*) (2.*abs(m_mode**2)/(omega_R**2)),rho,kr2,abs(xi_r)**2 ,omega_rot(i),alph,N2,compute_cs2(array,i),&
-        !&L_star,T,nabla,nabla_ad,compute_cp(array,i),V_2,((L_star)/(4.*PI*r**2 *rho*T)),(nabla_ad/nabla -1.),1./ds_dr,&
-        !&r!&(omega_R**2/compute_cs2(array,i)),(1. - S_l2/(omega_R**2)),(1. - N2/(omega_R**2)),S_l2,omega_R**2
+        write (305,*) r, coeff(i), omega_rot(i),&
+        (2.*abs(m_mode**2)/(omega_R**2)),rho,kr2,abs(xi_r)**2,alph,N2!,compute_cs2(array,i)
+        !&L_star,T,nabla,nabla_ad,compute_cp(array,i),V_2,((L_star)/(4.*PI*r**2 *rho*T)),(nabla_ad/nabla -1.),1./ds_dr
+        !&(omega_R**2/compute_cs2(array,i)),(1. - S_l2/(omega_R**2)),(1. - N2/(omega_R**2)),S_l2,omega_R**2
       end if
 
     end do
-    close(20)
+    !close(20)
     close(305)
 
 
@@ -802,33 +802,5 @@ MODULE coefficient_equations
     g = ((cs2)/(r**2 * omega**2))*(1./(1. - S_l/(omega**2)))
   end function computeG
 
-
-  function toymodel(array,m) result(f)
-    implicit none
-    real (DP) :: f(m)
-    real (DP), intent(in) :: array(:)
-    integer, intent(in) :: m
-    integer :: i
-
-    do i=1,m
-      !f(i) = array(i)**2 + cos(2.*array(i))
-      f(i) = cos((1.e-9)*array(i))
-    end do
-
-  end function
-
-  function dev_toymodel(array,m) result(f)
-    implicit none
-    real (DP) :: f(m)
-    real (DP), intent(in) :: array(:)
-    integer, intent(in) :: m
-    integer :: i
-
-    do i=1,m
-      !f(i) = 2.*array(i)*cos(2.*array(i)) + 2.*(array(i)**2)*sin(2.*array(i))
-      f(i) = -(1.e-9)*sin((1.e-9)*array(i))
-    end do
-
-  end function
 
   END MODULE coefficient_equations

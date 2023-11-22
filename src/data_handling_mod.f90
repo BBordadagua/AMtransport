@@ -9,7 +9,7 @@
 
 MODULE data_handling
   use parameters
-  use math_functions
+  !use math_functions
   implicit none
   
   !define public subroutines and functions
@@ -142,7 +142,7 @@ subroutine getradiativeR(ri,rf,filearray)
   do i=1,N
     ! for RC star !filearray(2,i)/R_star >0.001
     !if (filearray(9,i) >0. .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.001) then
-    if (filearray(9,i) >0. .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6) then
+    if (filearray(9,i) >0d0 .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6d0) then
       counti=1
       ri = i!filearray(2,i)
     end if
@@ -150,7 +150,7 @@ subroutine getradiativeR(ri,rf,filearray)
 
     ! for RC star !filearray(2,i)/R_star >0.1
     !if (filearray(9,i) <0. .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.1) then
-    if (filearray(9,i) <0. .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6) then
+    if (filearray(9,i) <0d0 .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6d0) then
       rf = i-1!filearray(2,i-1)
       counti = 2
     end if
@@ -201,7 +201,7 @@ subroutine double_Npoints(file,double_file,N)
 
   do j=2,19
     if(j/=3) then
-      double_file(j,:) = interpolate(file(3,:),file(j,:),N,double_file(3,:),2*N-1)
+      !double_file(j,:) = interpolate(file(3,:),file(j,:),N,double_file(3,:),2*N-1)
     end if
   end do
 

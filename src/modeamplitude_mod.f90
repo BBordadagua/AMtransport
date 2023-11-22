@@ -51,8 +51,9 @@ MODULE compute_modeamplitude
 	    !eta_p = eta_sun * (T_eff/Tsun)**(12.)
 
 
-    write(50,*) summaryfile(8,j),freq, sqrt(V2),summaryfile(5,getj_l0(summaryfile,freq)),&
-    & sqrt(computel0(summaryfile(5,getj_l0(summaryfile,freq)))), amp_ml,m!,abs(array(2,5))
+    !! print amplitude info
+    !write(50,*) summaryfile(8,j),freq, sqrt(V2),summaryfile(5,getj_l0(summaryfile,freq)),&
+    !& sqrt(computel0(summaryfile(5,getj_l0(summaryfile,freq)))), amp_ml,m!,abs(array(2,5))
     
 
   end subroutine

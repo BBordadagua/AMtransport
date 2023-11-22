@@ -6,7 +6,8 @@ Module numerical_scheme
   
   !define public subroutines and functions
   public :: rotation_profile_implicit,rotation_profile_explicit,implicit_test
-  public :: create_matrix_diffusionCN,create_matrix_diffusionCN_mod,CrankNicolson
+  public :: create_matrix_diffusionCN,create_matrix_diffusionCN_mod,create_matrix_Henyey
+  public :: CrankNicolson, create_vector_Henyey
   contains
 
   !!Backward Euler
@@ -289,28 +290,34 @@ Module numerical_scheme
     !!fill matrix_A
     matrix_A = 0.
     do i=2,m-1
-      matrix_A(i,i)   = 1. + 2.*lambda(i) + beta(i)
-      matrix_A(i-1,i) = -(lambda(i) - alpha(i))
-      matrix_A(i+1,i) = -(lambda(i) + alpha(i))
+      matrix_A(1,i) = -(lambda(i) - alpha(i))
+      matrix_A(2,i) = 1. + 2.*lambda(i) + beta(i) !diagonal
+      matrix_A(3,i) = -(lambda(i) + alpha(i))
     end do
     !!Boundary conditions
-    matrix_A(2,1)   = -(lambda(1) + alpha(1))
-    matrix_A(1,1)   = 1. + lambda(1) + beta(1) + alpha(1)
-    matrix_A(m-1,m) = -(lambda(m) - alpha(m))
-    matrix_A(m,m)   = 1. + lambda(m) + beta(m) - alpha(m)
+    matrix_A(1,1) = 0. !b
+    matrix_A(2,1) = 1. + lambda(1) + beta(1) + alpha(1) !diagonal
+    matrix_A(3,1) = -(lambda(1) + alpha(1)) !a
+    
+    matrix_A(1,m) = -(lambda(m) - alpha(m)) !b
+    matrix_A(2,m) = 1. + lambda(m) + beta(m) - alpha(m) !diagonal
+    matrix_A(3,m) = 0. !a
 
     !!fill matrix_B
     matrix_B = 0.
     do i=2,m-1
-      matrix_B(i,i)   = 1. - 2.*lambda(i) - beta(i)
-      matrix_B(i-1,i) = lambda(i) - alpha(i)
-      matrix_B(i+1,i) = lambda(i) + alpha(i)
+      matrix_B(1,i) = lambda(i) - alpha(i)
+      matrix_B(2,i) = 1. - 2.*lambda(i) - beta(i)
+      matrix_B(3,i) = lambda(i) + alpha(i)
     end do
     !!Boundary conditions
-    matrix_B(2,1)   = lambda(1) + alpha(1)
-    matrix_B(1,1)   = 1. - lambda(1) - beta(1) - alpha(1)
-    matrix_B(m-1,m) = lambda(m) - alpha(m)
-    matrix_B(m,m)   = 1. - lambda(m) - beta(m) + alpha(m)
+    matrix_B(1,1) = 0.
+    matrix_B(2,1) = 1. - lambda(1) - beta(1) - alpha(1)
+    matrix_B(3,1) = lambda(1) + alpha(1)
+    
+    matrix_B(1,m) = lambda(m) - alpha(m)
+    matrix_B(2,m) = 1. - lambda(m) - beta(m) + alpha(m)
+    matrix_B(3,m) = 0.
     !print*,matrix_A(m,m) , matrix_A(m-1,m), matrix_A(1,1),matrix_A(2,1)
 
 
@@ -319,29 +326,80 @@ Module numerical_scheme
   end subroutine create_matrix_diffusionCN
 
 
-  subroutine create_matrix_diffusionCN_mod(MESAfile,m,delta_t,nu_diff,matrix_A,matrix_B)
+  subroutine create_matrix_diffusionCN_mod(MESAfile,m,delta_t,nu_diff,rdot,matrix_A,matrix_B)
     implicit none
-    real (DP), intent(in) :: MESAfile(:,:), delta_t,nu_diff
+    real (DP), intent(in) :: MESAfile(:,:), delta_t,nu_diff,rdot(:)
     real (DP), intent(inout) :: matrix_A(:,:),matrix_B(:,:)
     integer, intent(in) :: m 
-    real (DP), allocatable :: lambda(:),beta(:)
+    real (DP), allocatable :: lambda(:),beta(:),alpha(:),epsilon(:),gamma(:),zeta(:)
+    real (DP), allocatable :: a1(:), a2(:)
     integer :: i
+    real (DP) :: const
 
-    allocate(lambda(m),beta(m))
+    const = 1d10!1d-10
+
+    allocate(lambda(m),beta(m),alpha(m),epsilon(m),gamma(m),zeta(m),a1(m),a2(m))
 
     do i=1,m
       if (i == 1) then
+        !! diffusion terms
         lambda(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i+1)*MESAfile(2,i+1)**4)&
           &/((MESAfile(2,i+1)-MESAfile(2,i))*(MESAfile(2,i+1)-MESAfile(2,i)))
 
         beta(i) = 0.
+
+        !! mixed modes term jdot
+        alpha(i) = (MESAfile(5,i)*delta_t)/(MESAfile(3,i)*MESAfile(2,i)**2)
+
+        !! contraction and expasion of the star
+        epsilon(i) = rdot(i)*delta_t
+
+        !! toy model flux
+        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i+1)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i))
+        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i))
+
+        !! j dot mid point
+        a1(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
+        &(MESAfile(2,i)+MESAfile(2,i))**2)
+        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
+        &(MESAfile(2,i)+MESAfile(2,i))**2)
+
+        a1(i) = 0.!0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        !&(MESAfile(2,i-1))**2)
+        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        &(MESAfile(2,i))**2)
+
       else if (i == m) then
         lambda(i) = 0.
 
         beta(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i-1)*MESAfile(2,i-1)**4)&
           &/((MESAfile(2,i)-MESAfile(2,i-1))*(MESAfile(2,i)-MESAfile(2,i-1)))
+
+        alpha(i) = (MESAfile(5,i)*delta_t)/(MESAfile(3,i)*MESAfile(2,i)**2)
+
+        epsilon(i) = rdot(i)*delta_t
+
+        !! toy model flux
+        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i)+MESAfile(2,i))**2)/(MESAfile(2,i)-MESAfile(2,i-1))
+        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i)+MESAfile(2,i-1))**2)/(MESAfile(2,i)-MESAfile(2,i-1))
+
+        !! j dot mid point
+        a1(i) = 4.*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        &(MESAfile(2,i)+MESAfile(2,i-1))**2)
+        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        &(MESAfile(2,i)+MESAfile(2,i-1))**2)
+
+        a1(i) = 0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        &(MESAfile(2,i-1))**2)
+        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        &(MESAfile(2,i))**2)
+
       else
         lambda(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i+1)*MESAfile(2,i+1)**4)&
@@ -350,83 +408,299 @@ Module numerical_scheme
         beta(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i-1)*MESAfile(2,i-1)**4)&
           &/((MESAfile(2,i)-MESAfile(2,i-1))*(MESAfile(2,i+1)-MESAfile(2,i-1)))
+
+        alpha(i) = (MESAfile(5,i)*delta_t)/(MESAfile(3,i)*MESAfile(2,i)**2)
+
+        epsilon(i) = rdot(i)*delta_t
+
+        !! toy model flux
+        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i+1)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i-1))
+        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        !&((MESAfile(2,i)+MESAfile(2,i-1))**2)/(MESAfile(2,i+1)-MESAfile(2,i-1))
+
+        !! j dot mid point
+        a1(i) = 4.*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        &(MESAfile(2,i)+MESAfile(2,i-1))**2)
+        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        &(MESAfile(2,i)+MESAfile(2,i-1))**2)
+
+        a1(i) = 0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        &(MESAfile(2,i-1))**2)
+        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        &(MESAfile(2,i))**2)
+
       end if
     end do
+
+    !! diffusion term
+    !lambda = 0.
+    !beta = 0.
+    !! contraction and expansion term
+    !epsilon = 0.
+    !! jdot term
+    alpha = 0.
+    !! toy model flux term
+    gamma = 0.
+    zeta = 0.
+    !! toy model integrated flux term
+    a1 = 0.
+    a2 = 0.
 
     !!fill matrix_A
     matrix_A = 0.
     do i=2,m-1
-      matrix_A(i,i)   = 1. + lambda(i) + beta(i)
-      matrix_A(i-1,i) = -beta(i)
-      matrix_A(i+1,i) = -lambda(i)
+      matrix_A(1,i)= -beta(i)+zeta(i)-a1(i)
+      matrix_A(2,i)= 1.+lambda(i)+beta(i)+epsilon(i)-alpha(i)-gamma(i)+zeta(i)-a2(i)
+      matrix_A(3,i)= -lambda(i)-gamma(i)
     end do
     !!Boundary conditions
-    matrix_A(2,1)   = -lambda(1)
-    matrix_A(1,1)   = 1. + lambda(1)
-    matrix_A(m-1,m) = -beta(m)
-    matrix_A(m,m)   = 1. + beta(m) 
+    matrix_A(1,1) = 0.
+    matrix_A(2,1) = 1.+lambda(1)+epsilon(1)-alpha(1)-gamma(1)+2.*zeta(1)-a2(1)-a1(1)
+    matrix_A(3,1) = -lambda(1)-gamma(1)
+
+    matrix_A(1,m) = -beta(m)+zeta(m)-a1(m)
+    matrix_A(2,m) = 1.+beta(m)+epsilon(m)-alpha(m)-2.*gamma(m)+zeta(m)-a2(m)
+    matrix_A(3,m) = 0.
 
     !!fill matrix_B
     matrix_B = 0.
     do i=2,m-1
-      matrix_B(i,i)   = 1. - lambda(i) - beta(i)
-      matrix_B(i-1,i) = beta(i)
-      matrix_B(i+1,i) = lambda(i)
+      matrix_B(1,i) = beta(i)-zeta(i)+a1(i)
+      matrix_B(2,i) = 1.-lambda(i)-beta(i)-epsilon(i)+alpha(i)+gamma(i)-zeta(i)+a2(i)
+      matrix_B(3,i) = lambda(i)+gamma(i)
     end do
     !!Boundary conditions
-    matrix_B(2,1)   = lambda(1) 
-    matrix_B(1,1)   = 1. - lambda(1)
-    matrix_B(m-1,m) = beta(m) 
-    matrix_B(m,m)   = 1. - beta(m) 
-    
-    !print*,matrix_A(m,m) , matrix_A(m-1,m), matrix_A(1,1),matrix_A(2,1),&
-    !&matrix_B(m,m) , matrix_B(m-1,m), matrix_B(1,1),matrix_B(2,1)
+    matrix_B(1,1) = 0.
+    matrix_B(2,1) = 1.-lambda(1)-epsilon(1)+alpha(1)+gamma(1)-2.*zeta(1)+a2(1)+a1(1)
+    matrix_B(3,1) = lambda(1) +gamma(1)
 
-    deallocate(lambda,beta)
+    matrix_B(1,m) = beta(m) -zeta(m)+a1(m)
+    matrix_B(2,m) = 1.-beta(m)-epsilon(m)+alpha(m)+2.*gamma(m)-zeta(m)+a2(m)
+    matrix_B(3,m) = 0.
+
+    !call printMatrix(matrix_A, 3, m,1000)
+
+    deallocate(lambda,beta,alpha,epsilon,gamma,zeta,a1,a2)
 
   end subroutine create_matrix_diffusionCN_mod
 
 
-  function CrankNicolson(MESAfile,m,iter,delta_t,nu_diff) result(omega)
+  function CrankNicolson(MESAfile,m,iter,delta_t,nu_diff,rdot) result(omega)
     implicit none
-    real (DP), intent(in) :: delta_t, MESAfile(:,:),nu_diff
+    real (DP), intent(in) :: delta_t, MESAfile(:,:),nu_diff,rdot(:)
     integer, intent(in) :: iter,m
-    real (DP), allocatable :: matrix_A(:,:), matrix_B(:,:), U(:),V(:)
+    real (DP), allocatable :: U(:),V(:),mA_triag(:,:),mB_triag(:,:)
     real (DP) :: omega(m)
     integer :: j
 
     !!allocate matrix and vector
-    allocate(matrix_A(m,m),matrix_B(m,m))
+    allocate(mA_triag(3,m),mB_triag(3,m))
     allocate(U(m),V(m))
 
-    !! 'Finish creating matrix'
-    call create_matrix_diffusionCN(MESAfile,m,delta_t,nu_diff,matrix_A,matrix_B)
-    !call create_matrix_diffusionCN_mod(MESAfile,m,delta_t,nu_diff,matrix_A,matrix_B)
-    !call printMatrix(matrix_A, m, m,1000)
+    !! Create matrix
+    !call create_matrix_diffusionCN(MESAfile,m,delta_t,nu_diff,mA_triag,mB_triag)
+    call create_matrix_diffusionCN_mod(MESAfile,m,delta_t,nu_diff,rdot,mA_triag,mB_triag)
    
     V = MESAfile(4,:) !omega
     do j=1,iter    !!subtimesteps
-      !!initial conditions and boundary conditions
-      !V(1) = V(2)
-      !V(m) = V(m-1)
 
-      !!'Finish multiplying matrix'
+      !! multiplying matrix
       U = 0.
-      U = matmul(transpose(matrix_B),V)
-      !print*, U(1),U(m),V(1),V(m)
+      !U = matmul(transpose(matrix_B),V)
+      U = multiply_matrix_vector_triag(mB_triag,V,m)
 
-      !!Tridiagonal matrix
+      !!invert Tridiagonal matrix
       omega = 0.
-      !call printMatrix(U, 1, m,2000)
-      call invert_tridagmatrix(matrix_A,m,omega,U)
-      !print*, 'Finish inverting matrix'
+      call invert_tridagmatrix(mA_triag,m,omega,U)
 
       V = omega
     end do
 
-    deallocate(matrix_A,matrix_B,U,V)
+    deallocate(U,V,mA_triag,mB_triag)
 
   end function CrankNicolson
+
+
+
+  !! ----------------------------Henyey Scheme ----------------------------------
   
+  subroutine create_matrix_Henyey(MESAfile,oldMESAfile,m,delta_t,nu_diff,matrix)
+    implicit none
+    real (DP), intent(in) :: MESAfile(:,:), delta_t,nu_diff, oldMESAfile(:,:)
+    real (DP), intent(inout) :: matrix(:,:)
+    integer, intent(in) :: m 
+    real (DP), allocatable :: S1(:,:),S2(:,:),C1(:),C2(:),C3(:),C4(:),C5(:),C6(:)
+    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf!,r_dot
+    integer :: i
+
+    allocate(S1(4,m),S2(4,m),C1(m),C2(m),C3(m),C4(m),C5(m),C6(m))
+
+    !MESAfile(1,:) = mass
+    !MESAfile(2,:) = radius
+    !MESAfile(3,:) = rho
+    !MESAfile(4,:) = omega
+    !MESAfile(5,:) = Jmodes
+    !MESAfile(6,:) = g
+    !MESAfile(7,:) = nu
+
+    do i=1,m
+      !! boundary condition (domega/dnu = 0 in the boundary)
+      if (i==1) then 
+        delta_nu   = MESAfile(7,i) !!! caution division by zero!!!
+        radius     = MESAfile(2,i)
+        rho        = MESAfile(3,i)
+        g_surf     = MESAfile(6,i)
+        nu         = MESAfile(7,i) 
+        radius_old = oldMESAfile(2,i)
+        omega_old  = oldMESAfile(4,i)
+        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      else
+        delta_nu   = MESAfile(7,i) - MESAfile(7,i-1)
+        radius     = (MESAfile(2,i) + MESAfile(2,i-1))/2.
+        rho        = (MESAfile(3,i) + MESAfile(3,i-1))/2.
+        g_surf     = (MESAfile(6,i) + MESAfile(6,i-1))/2.
+        nu         = (MESAfile(7,i) + MESAfile(7,i-1))/2.
+        radius_old = (oldMESAfile(2,i) + oldMESAfile(2,i-1))/2.
+        omega_old  = (oldMESAfile(4,i) + oldMESAfile(4,i-1))/2.
+
+        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      end if
+
+      C1(i) = radius**2 /delta_t
+      C2(i) = radius_old**2 *omega_old /delta_t
+      C3(i) = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
+      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
+      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+
+    end do
+
+      S1(1,:) = C1/2.
+      S1(2,:) = C6
+      S1(3,:) = C1/2.
+      S1(4,:) = -C5
+
+      S2(1,:) = C4
+      S2(2,:) = 0.5d0
+      S2(3,:) = -C4
+      S2(4,:) = 0.5d0
+
+    !!fill matrix_A
+    matrix = 0.
+    do i=3,2*m-1,2
+      matrix(1,i) = S2(1,i)
+      matrix(2,i) = S2(2,i)
+      matrix(3,i) = S2(3,i)
+      matrix(4,i) = S2(4,i)
+      matrix(5,i) = 0.
+    end do
+    do i=1,2*m-1,2
+      matrix(i,i+1)   = S1(1,i)
+      matrix(i+1,i+1) = S1(2,i)
+      matrix(i+2,i+1) = S1(3,i)
+      matrix(i+3,i+1) = S1(4,i)
+
+      matrix(i,i+2)   = S2(1,i)
+      matrix(i+1,i+2) = S2(2,i)
+      matrix(i+2,i+2) = S2(3,i)
+      matrix(i+3,i+2) = S2(4,i)
+    end do
+
+    !!Boundary conditions  
+    !!!! missing mixed modes!!!
+    matrix(1,1)   = 0. !b
+    matrix(2,1)   = 0. !c
+    matrix(3,1)   = 0. !diagonal
+    matrix(4,1)   = 1. !e
+    matrix(5,1)   = 0. !f
+
+    matrix(1,2*m+2) = 0.
+    matrix(2,2*m+2) = 0.
+    matrix(3,2*m+2) = 1.  !diagonal
+    matrix(4,2*m+2) = 0.
+    matrix(5,2*m+2) = 0.
+
+
+    deallocate(S1,S2,C1,C2,C3,C4,C5,C6)
+
+  end subroutine create_matrix_Henyey
+
+  subroutine create_vector_Henyey(MESAfile,oldMESAfile,m,delta_t,nu_diff,vector_E,omega)
+    implicit none
+    real (DP), intent(in) :: MESAfile(:,:), delta_t,nu_diff, oldMESAfile(:,:),omega(:)
+    real (DP), intent(inout) :: vector_E(:)
+    integer, intent(in) :: m 
+    real (DP), allocatable :: C1(:),C2(:),C3(:),C4(:),C5(:),C6(:),y1(:),y1k(:),y2(:),y2k(:)
+    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf!,r_dot
+    integer :: i
+
+    allocate(C1(m),C2(m),C3(m),C4(m),C5(m),C6(m),y1(m),y1k(m),y2(m),y2k(m))
+
+    !MESAfile(1,:) = mass
+    !MESAfile(2,:) = radius
+    !MESAfile(3,:) = rho
+    !MESAfile(4,:) = omega
+    !MESAfile(5,:) = Jmodes
+    !MESAfile(6,:) = g
+    !MESAfile(7,:) = nu
+
+    do i=1,m
+      !! boundary condition (domega/dnu = 0 in the boundary)
+      if (i==1) then 
+        delta_nu   = MESAfile(7,i) !!! caution division by zero!!!
+        radius     = MESAfile(2,i)
+        rho        = MESAfile(3,i)
+        g_surf     = MESAfile(6,i)
+        nu         = MESAfile(7,i) 
+        radius_old = oldMESAfile(2,i)
+        omega_old  = oldMESAfile(4,i)
+        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      else
+        delta_nu   = MESAfile(7,i) - MESAfile(7,i-1)
+        radius     = (MESAfile(2,i) + MESAfile(2,i-1))/2.
+        rho        = (MESAfile(3,i) + MESAfile(3,i-1))/2.
+        g_surf     = (MESAfile(6,i) + MESAfile(6,i-1))/2.
+        nu         = (MESAfile(7,i) + MESAfile(7,i-1))/2.
+        radius_old = (oldMESAfile(2,i) + oldMESAfile(2,i-1))/2.
+        omega_old  = (oldMESAfile(4,i) + oldMESAfile(4,i-1))/2.
+
+        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      end if
+
+      C1(i) = radius**2 /delta_t
+      C2(i) = radius_old**2 *omega_old /delta_t
+      C3(i) = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
+      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
+      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      
+    end do
+
+    do i=1,m
+      y1k(i) =  omega(i)
+    end do
+    do i = 1,m
+      if(i == 1) then
+        y1(i) =  y1k(i) !k-1/2
+        y2k(i) = C4(i+1)*(y1k(i+1)-y1k(i))/2. !k-1/2 + k+1/2
+        y2(i) = 0. !k-1/2
+      else
+        y1(i) =  (y1k(i) + y1k(i-1))/2. !k-1/2
+        y2k(i) =  C4(i)*(y1k(i)-y1k(i-1))/2. + C4(i+1)*(y1k(i+1)-y1k(i))/2. !k-1/2 + k+1/2
+        y2(i) = C4(i)*(y1k(i) - y1k(i-1))/2. !k-1/2
+      end if
+    end do
+
+    !! fill vector E, size 2 boundary cond + 2N
+    do i=2,2*m+1,2
+      vector_E(i) = -(C1(i)*y1(i)-C2(i)-C5(i)*y2k(i)+C6(i)*y2k(i-1)-C3(i)) !!k-1/2
+      vector_E(i+1) = -(y2(i)-C4(i)*(y1k(i) - y1k(i-1))) !!k-1/2
+    end do
+    !!Boundary conditions
+    vector_E(1) = -y2(1)
+    vector_E(2*m+2) = -y2(m)
+
+    deallocate(C1,C2,C3,C4,C5,C6,y1,y1k,y2,y2k)
+
+  end subroutine create_vector_Henyey
 
 end module numerical_scheme
