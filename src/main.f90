@@ -87,7 +87,8 @@ program main
     close(301)
 
     !! set general variables of the model
-    call set_variables(MESAhistory,modelini)
+    !call set_variables(MESAhistory,modelini)
+    call set_variables(MESAhistory,model)
 
     !! obtain radius of radiative region from MESA profile N2
     call getradiativeR(ri,rf,MESAprofile)
@@ -99,7 +100,7 @@ program main
 
     !! compute mixed modes flux
     allocate(F_total(3,size(MESAprofile,dim=2)))
-    F_total = 0.
+    F_total = 0d0
     do i=1,size(MESAprofile,dim=2)
       F_total(:,i) = i
     end do

@@ -380,7 +380,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     & y,c,s,MESAfile,oldMESAfile,delta_t,nu_diff)
     implicit none 
     real (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff
-    real (DP), intent(in) :: conv,slowc,scalv(:)
+    real (DP), intent(in) :: conv,slowc,scalv(:) !! changed
     real (DP), intent(inout) :: c(:,:,:),s(:,:),y(:,:)
     integer, intent(in) :: itmax,m,ne,nb,indexv(:)
     integer :: NMAX 
@@ -388,6 +388,9 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     integer :: ic1,ic2,ic3,ic4,it,j,j1,j2,j3,j4,j5,j6,j7,j8, &
     & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(NMAX)
     real (DP) :: err,errj,fac,vmax,vz,ermax(NMAX)
+
+    s=0d0
+    c=0d0
 
 
     k1=1 !Set up row and column markers. 
@@ -425,12 +428,12 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       call red(ic1,ic2,j5,j6,j7,j8,j9,ic3,jc1,jcf,k2,c,s) 
       call pinvs(ic1,ic2,j7,j9,jcf,k2+1,c,s)
       call bksub(ne,nb,jcf,k1,k2,c) !Backsubstitution. 
-      err=0. 
+      err=0d0
       do j=1,ne !Convergence check, accumulate average error. 
         jv=indexv(j) 
-        errj=0. 
-        km=0 !! this can't be zero
-        vmax=0. 
+        errj=0d0
+        km=0 !! this can't be zero 
+        vmax=0d0 
         do k=k1,k2 !Find point with largest error, for each dependent variable. 
           vz=abs(c(jv,1,k)) 
           if(vz.gt.vmax) then 
@@ -448,13 +451,19 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       do j=1,ne !Apply corrections. 
         jv=indexv(j) 
         do k=k1,k2 
+          if (jv == 1) write(9000,*) y(2,k),c(1,1,k), fac, err
+          if (jv == 2) write(8000,*) y(1,k),c(2,1,k), fac, err
           y(j,k)=y(j,k)-fac*c(jv,1,k) 
+          
         enddo
+        if (jv == 1) write(9000,*) '  '
+        if (jv == 1) write(8000,*) '  '
       enddo 
-      !write(*,100) it,err,fac 
-      write(*,100) 'it',it,'   err',err,'   fac',fac 
-      !Summary of corrections for this step. Point with largest error for each 
+      write(*,100) 'it',it,'   err',err,'   fac',fac
+      !!Summary of corrections for this step. Point with largest error for each 
       !variable can be monitored by writing out kmax and ermax. 
+      print*, 'jv ', 1, 'kmax ',kmax(1), 'ermax ', ermax(1)
+      print*, 'jv ', 2, 'kmax ',kmax(2), 'ermax ', ermax(2)
       if(err.lt.conv) return 
     enddo
     !100 format(1x,i4,2f12.6)
@@ -519,7 +528,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     js1=je2+1 
     do i=ie1,ie2 
       !Implicit pivoting, as in x2.1. 
-      big=0. 
+      big=0d0
       do j=je1,je2 
         if(abs(s(i,j)).gt.big) big=abs(s(i,j)) 
       enddo 
@@ -527,15 +536,15 @@ SUBROUTINE inverse_matrix(a,n,np,y)
         print*, 'singular matrix, row all 0 in pinvs' 
         stop
       end if
-      pscl(i)=1./big 
+      pscl(i)=1d0/big 
       indxr(i)=0 
     enddo  
     do id=ie1,ie2 
-      piv=0. 
+      piv=0d0 
       do i=ie1,ie2 
         !Find pivot element. 
         if(indxr(i).eq.0) then 
-          big=0. 
+          big=0d0 
           do j=je1,je2 
             if(abs(s(i,j)).gt.big) then 
               jp=j 
@@ -554,12 +563,12 @@ SUBROUTINE inverse_matrix(a,n,np,y)
         stop
       end if
       indxr(ipiv)=jpiv !In place reduction. Save column ordering. 
-      pivinv=1./s(ipiv,jpiv) 
+      pivinv=1d0/s(ipiv,jpiv) 
       do j=je1,jsf 
         !Normalize pivot row. 
         s(ipiv,j)=s(ipiv,j)*pivinv 
       enddo 
-      s(ipiv,jpiv)=1. 
+      s(ipiv,jpiv)=1d0 
       do i=ie1,ie2 
         !Reduce nonpivot elements in column. 
         if(indxr(i).ne.jpiv) then 
@@ -568,7 +577,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
             do j=je1,jsf 
               s(i,j)=s(i,j)-dum*s(ipiv,j) 
             enddo  
-            s(i,jpiv)=0. 
+            s(i,jpiv)=0d0 
           endif 
         endif 
       enddo 
@@ -581,7 +590,6 @@ SUBROUTINE inverse_matrix(a,n,np,y)
         c(irow,j+jcoff,k)=s(i,j) 
       enddo
     enddo
-    write(1000,*) c(:,1,1)
     return 
   END SUBROUTINE pinvs
 
@@ -636,62 +644,75 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     REAL (DP), intent(inout) :: s(:,:)
     !INTEGER :: mm,n,i
     real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf!,r_dot
-    real (DP) :: C1,C2,C3,C4,C5,C6
+    real (DP) :: C1,C2,C3,C4,C5,C6,C7,C8
      
 
     if(k.eq.k1) then !Boundary condition at first point. 
-      delta_nu   = MESAfile(7,k) !!! caution division by zero!!!
-      radius     = MESAfile(2,k)
-      rho        = MESAfile(3,k)
-      g_surf     = MESAfile(6,k)
-      nu         = MESAfile(7,k) 
-      radius_old = oldMESAfile(2,k)
-      omega_old  = oldMESAfile(4,k)
-      C6 = (4.*PI*MESAfile(6,k)*MESAfile(3,k)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
-      
-    !else if(k.gt.k2) then !Boundary conditions at last point. 
+  
+    else if(k.gt.k2) then !Boundary conditions at last point. 
+   
     else !Interior point. 
       delta_nu   = MESAfile(7,k) - MESAfile(7,k-1)
-      radius     = (MESAfile(2,k) + MESAfile(2,k-1))/2.
-      rho        = (MESAfile(3,k) + MESAfile(3,k-1))/2.
-      g_surf     = (MESAfile(6,k) + MESAfile(6,k-1))/2.
-      nu         = (MESAfile(7,k) + MESAfile(7,k-1))/2.
-      radius_old = (oldMESAfile(2,k) + oldMESAfile(2,k-1))/2.
-      omega_old  = (oldMESAfile(4,k) + oldMESAfile(4,k-1))/2.
-      C6 = (4.*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      radius     = 0.5d0*(MESAfile(2,k) + MESAfile(2,k-1))
+      rho        = 0.5d0*(MESAfile(3,k) + MESAfile(3,k-1))
+      g_surf     = 0.5d0*(MESAfile(6,k) + MESAfile(6,k-1))
+      nu         = 0.5d0*(MESAfile(7,k) + MESAfile(7,k-1))
+      radius_old = 0.5d0*(oldMESAfile(2,k) + oldMESAfile(2,k-1)) !! skipping r=0
+      omega_old  = 0.5d0*(oldMESAfile(4,k) + oldMESAfile(4,k-1))
+
+      C1 = (radius**2) /delta_t
+      C2 = ((radius_old**2) *omega_old) /delta_t
+      C3 = 0d0 !MESAfile(4,i)/(rho*(R_sun**2))  !Jmodes
+      C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun*g_surf*dsqrt(nu)*delta_nu)
+      C5 = (4d0*PI*MESAfile(6,k)*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
+      C6 = (4d0*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
+      C7 = nu_diff*(64d0*(PI**2)*(R_sun**2)/(9d0*(M_sun**2)*dsqrt(nu)*delta_nu))&
+      &*((MESAfile(2,k)**6)*(MESAfile(3,k)**2)/dsqrt(MESAfile(7,k)))
+      C8 = nu_diff*(64d0*(PI**2)*(R_sun**2)/(9d0*(M_sun**2)*dsqrt(nu)*delta_nu))&
+      &*((MESAfile(2,k-1)**6)*(MESAfile(3,k-1)**2)/dsqrt(MESAfile(7,k-1)))
+
     end if
-    C1 = radius**2 /delta_t
-    C2 = radius_old**2 *omega_old /delta_t
-    C3 = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
-    C4 = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
-    C5 = (4.*PI*MESAfile(6,k)*MESAfile(3,k)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+    
+
+    !C1 = 1d0/delta_t
+    !C2 = omega_old /delta_t
+    !C4 = 1d0/delta_nu
+    !C5 = nu_diff/delta_nu
+    !C6 = nu_diff/delta_nu
+
+    !s=0d0 !! added makes matrix singular
     
     if(k.eq.k1) then !Boundary condition at first point. 
-      s(1,2+indexv(1))=0.
-      s(1,2+indexv(2))=1.
-      s(1,jsf)=y(2,k1)
-      !call printMatrix(s,2,5,1000)
-      print*,s(1,jsf), jsf
+      s(2,2+indexv(1))=0d0
+      s(2,2+indexv(2))=1d0
+      s(2,jsf)=y(2,k1)
+    
+      !call printMatrix(s,2,5,7000)
     else if(k.gt.k2) then !Boundary conditions at last point. 
-      s(2,2+indexv(1))=0.
-      s(2,2+indexv(2))=1.
+      s(2,2+indexv(1))=0d0
+      s(2,2+indexv(2))=1d0
       s(2,jsf)=y(2,k2)
-      call printMatrix(s,2,5,2000)
+  
+      !call printMatrix(s,2,5,2000)
     else !Interior point. 
       s(1,indexv(1))=0.5d0*C1  !E1
-      s(1,indexv(2))=C6
+      s(1,indexv(2))=C6 !C8!C6
       s(1,2+indexv(1))= 0.5d0*C1
-      s(1,2+indexv(2))=-C5
+      s(1,2+indexv(2))=-C5 !-C7!-C5
 
-      s(2,indexv(1))=C4    !E2
+      s(2,indexv(1))=C4 !1d0/delta_nu !C4     !E2
       s(2,indexv(2))=0.5d0 
-      s(2,2+indexv(1))=-C4
+      s(2,2+indexv(1))=-C4 !-1d0/delta_nu !-C4
       s(2,2+indexv(2))=0.5d0
 
-      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)&
-      &-0.5d0*C3*(y(1,k)+y(1,k-1)) !E1
+      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)!&
+      !!&-0.5d0*C3*(y(1,k)+y(1,k-1)) !E1
       s(2,jsf)=0.5d0*(y(2,k)+y(2,k-1))-C4*(y(1,k)-y(1,k-1)) !E2
-      call printMatrix(s,2,5,3000)
+
+      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C7*y(2,k)+C8*y(2,k-1) !E1
+      !s(2,jsf)=0.5d0*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1))/delta_nu !E2
+
+      !call printMatrix(s,2,5,3000)
     endif 
 
     

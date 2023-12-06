@@ -331,23 +331,20 @@ Module numerical_scheme
     real (DP), intent(in) :: MESAfile(:,:), delta_t,nu_diff,rdot(:)
     real (DP), intent(inout) :: matrix_A(:,:),matrix_B(:,:)
     integer, intent(in) :: m 
-    real (DP), allocatable :: lambda(:),beta(:),alpha(:),epsilon(:),gamma(:),zeta(:)
+    real (DP), allocatable :: lambda(:),beta(:),alpha(:),epsilon(:)
     real (DP), allocatable :: a1(:), a2(:)
     integer :: i
-    real (DP) :: const
 
-    const = 1d10!1d-10
-
-    allocate(lambda(m),beta(m),alpha(m),epsilon(m),gamma(m),zeta(m),a1(m),a2(m))
+    allocate(lambda(m),beta(m),alpha(m),epsilon(m),a1(m),a2(m))
 
     do i=1,m
       if (i == 1) then
         !! diffusion terms
-        lambda(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        lambda(i) = (nu_diff*delta_t/(2d0*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i+1)*MESAfile(2,i+1)**4)&
           &/((MESAfile(2,i+1)-MESAfile(2,i))*(MESAfile(2,i+1)-MESAfile(2,i)))
 
-        beta(i) = 0.
+        beta(i) = 0d0
 
         !! mixed modes term jdot
         alpha(i) = (MESAfile(5,i)*delta_t)/(MESAfile(3,i)*MESAfile(2,i)**2)
@@ -355,27 +352,21 @@ Module numerical_scheme
         !! contraction and expasion of the star
         epsilon(i) = rdot(i)*delta_t
 
-        !! toy model flux
-        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i+1)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i))
-        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i))
-
         !! j dot mid point
-        a1(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
+        a1(i) = 4d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
         &(MESAfile(2,i)+MESAfile(2,i))**2)
-        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
+        a2(i) = 4d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i))*&
         &(MESAfile(2,i)+MESAfile(2,i))**2)
 
-        a1(i) = 0.!0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        a1(i) = 0d0!0.5d0*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
         !&(MESAfile(2,i-1))**2)
-        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        a2(i) = 0.5d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
         &(MESAfile(2,i))**2)
 
       else if (i == m) then
-        lambda(i) = 0.
+        lambda(i) = 0d0
 
-        beta(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        beta(i) = (nu_diff*delta_t/(2d0*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i-1)*MESAfile(2,i-1)**4)&
           &/((MESAfile(2,i)-MESAfile(2,i-1))*(MESAfile(2,i)-MESAfile(2,i-1)))
 
@@ -383,29 +374,23 @@ Module numerical_scheme
 
         epsilon(i) = rdot(i)*delta_t
 
-        !! toy model flux
-        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i)+MESAfile(2,i))**2)/(MESAfile(2,i)-MESAfile(2,i-1))
-        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i)+MESAfile(2,i-1))**2)/(MESAfile(2,i)-MESAfile(2,i-1))
-
         !! j dot mid point
-        a1(i) = 4.*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        a1(i) = 4d0*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
         &(MESAfile(2,i)+MESAfile(2,i-1))**2)
-        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        a2(i) = 4d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
         &(MESAfile(2,i)+MESAfile(2,i-1))**2)
 
-        a1(i) = 0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        a1(i) = 0.5d0*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
         &(MESAfile(2,i-1))**2)
-        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        a2(i) = 0.5d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
         &(MESAfile(2,i))**2)
 
       else
-        lambda(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        lambda(i) = (nu_diff*delta_t/(2d0*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i+1)*MESAfile(2,i+1)**4)&
           &/((MESAfile(2,i+1)-MESAfile(2,i))*(MESAfile(2,i+1)-MESAfile(2,i-1)))
 
-        beta(i) = (nu_diff*delta_t/(2.*MESAfile(3,i)*MESAfile(2,i)**4))*&
+        beta(i) = (nu_diff*delta_t/(2d0*MESAfile(3,i)*MESAfile(2,i)**4))*&
           &(MESAfile(3,i)*MESAfile(2,i)**4 + MESAfile(3,i-1)*MESAfile(2,i-1)**4)&
           &/((MESAfile(2,i)-MESAfile(2,i-1))*(MESAfile(2,i+1)-MESAfile(2,i-1)))
 
@@ -413,21 +398,15 @@ Module numerical_scheme
 
         epsilon(i) = rdot(i)*delta_t
 
-        !! toy model flux
-        !gamma(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i+1)+MESAfile(2,i))**2)/(MESAfile(2,i+1)-MESAfile(2,i-1))
-        !zeta(i) = const*(delta_t/(8.*MESAfile(3,i)*MESAfile(2,i)**4))*&
-        !&((MESAfile(2,i)+MESAfile(2,i-1))**2)/(MESAfile(2,i+1)-MESAfile(2,i-1))
-
         !! j dot mid point
-        a1(i) = 4.*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        a1(i) = 4d0*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
         &(MESAfile(2,i)+MESAfile(2,i-1))**2)
-        a2(i) = 4.*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
+        a2(i) = 4d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i)+MESAfile(3,i-1))*&
         &(MESAfile(2,i)+MESAfile(2,i-1))**2)
 
-        a1(i) = 0.5*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
+        a1(i) = 0.5d0*(MESAfile(5,i-1)*delta_t)/((MESAfile(3,i-1))*&
         &(MESAfile(2,i-1))**2)
-        a2(i) = 0.5*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
+        a2(i) = 0.5d0*(MESAfile(5,i)*delta_t)/((MESAfile(3,i))*&
         &(MESAfile(2,i))**2)
 
       end if
@@ -440,48 +419,45 @@ Module numerical_scheme
     !epsilon = 0.
     !! jdot term
     alpha = 0.
-    !! toy model flux term
-    gamma = 0.
-    zeta = 0.
-    !! toy model integrated flux term
+    !! j dot mid point term
     a1 = 0.
     a2 = 0.
 
     !!fill matrix_A
-    matrix_A = 0.
+    matrix_A = 0d0
     do i=2,m-1
-      matrix_A(1,i)= -beta(i)+zeta(i)-a1(i)
-      matrix_A(2,i)= 1.+lambda(i)+beta(i)+epsilon(i)-alpha(i)-gamma(i)+zeta(i)-a2(i)
-      matrix_A(3,i)= -lambda(i)-gamma(i)
+      matrix_A(1,i)= -beta(i)-a1(i)
+      matrix_A(2,i)= 1d0+lambda(i)+beta(i)+epsilon(i)-alpha(i)-a2(i)
+      matrix_A(3,i)= -lambda(i)
     end do
     !!Boundary conditions
-    matrix_A(1,1) = 0.
-    matrix_A(2,1) = 1.+lambda(1)+epsilon(1)-alpha(1)-gamma(1)+2.*zeta(1)-a2(1)-a1(1)
-    matrix_A(3,1) = -lambda(1)-gamma(1)
+    matrix_A(1,1) = 0d0
+    matrix_A(2,1) = 1d0+lambda(1)+epsilon(1)-alpha(1)-a2(1)-a1(1)
+    matrix_A(3,1) = -lambda(1)
 
-    matrix_A(1,m) = -beta(m)+zeta(m)-a1(m)
-    matrix_A(2,m) = 1.+beta(m)+epsilon(m)-alpha(m)-2.*gamma(m)+zeta(m)-a2(m)
-    matrix_A(3,m) = 0.
+    matrix_A(1,m) = -beta(m)-a1(m)
+    matrix_A(2,m) = 1d0+beta(m)+epsilon(m)-alpha(m)-a2(m)
+    matrix_A(3,m) = 0d0
 
     !!fill matrix_B
-    matrix_B = 0.
+    matrix_B = 0d0
     do i=2,m-1
-      matrix_B(1,i) = beta(i)-zeta(i)+a1(i)
-      matrix_B(2,i) = 1.-lambda(i)-beta(i)-epsilon(i)+alpha(i)+gamma(i)-zeta(i)+a2(i)
-      matrix_B(3,i) = lambda(i)+gamma(i)
+      matrix_B(1,i) = beta(i)+a1(i)
+      matrix_B(2,i) = 1d0-lambda(i)-beta(i)-epsilon(i)+alpha(i)+a2(i)
+      matrix_B(3,i) = lambda(i)
     end do
     !!Boundary conditions
-    matrix_B(1,1) = 0.
-    matrix_B(2,1) = 1.-lambda(1)-epsilon(1)+alpha(1)+gamma(1)-2.*zeta(1)+a2(1)+a1(1)
-    matrix_B(3,1) = lambda(1) +gamma(1)
+    matrix_B(1,1) = 0d0
+    matrix_B(2,1) = 1d0-lambda(1)-epsilon(1)+alpha(1)+a2(1)+a1(1)
+    matrix_B(3,1) = lambda(1)
 
-    matrix_B(1,m) = beta(m) -zeta(m)+a1(m)
-    matrix_B(2,m) = 1.-beta(m)-epsilon(m)+alpha(m)+2.*gamma(m)-zeta(m)+a2(m)
-    matrix_B(3,m) = 0.
+    matrix_B(1,m) = beta(m)+a1(m)
+    matrix_B(2,m) = 1d0-beta(m)-epsilon(m)+alpha(m)+a2(m)
+    matrix_B(3,m) = 0d0
 
     !call printMatrix(matrix_A, 3, m,1000)
 
-    deallocate(lambda,beta,alpha,epsilon,gamma,zeta,a1,a2)
+    deallocate(lambda,beta,alpha,epsilon,a1,a2)
 
   end subroutine create_matrix_diffusionCN_mod
 
@@ -554,7 +530,7 @@ Module numerical_scheme
         nu         = MESAfile(7,i) 
         radius_old = oldMESAfile(2,i)
         omega_old  = oldMESAfile(4,i)
-        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
       else
         delta_nu   = MESAfile(7,i) - MESAfile(7,i-1)
         radius     = (MESAfile(2,i) + MESAfile(2,i-1))/2.
@@ -564,14 +540,14 @@ Module numerical_scheme
         radius_old = (oldMESAfile(2,i) + oldMESAfile(2,i-1))/2.
         omega_old  = (oldMESAfile(4,i) + oldMESAfile(4,i-1))/2.
 
-        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
       end if
 
       C1(i) = radius**2 /delta_t
       C2(i) = radius_old**2 *omega_old /delta_t
       C3(i) = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
-      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
-      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*dsqrt(nu)*delta_nu)
+      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
 
     end do
 
@@ -654,7 +630,7 @@ Module numerical_scheme
         nu         = MESAfile(7,i) 
         radius_old = oldMESAfile(2,i)
         omega_old  = oldMESAfile(4,i)
-        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+        C6(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
       else
         delta_nu   = MESAfile(7,i) - MESAfile(7,i-1)
         radius     = (MESAfile(2,i) + MESAfile(2,i-1))/2.
@@ -664,14 +640,14 @@ Module numerical_scheme
         radius_old = (oldMESAfile(2,i) + oldMESAfile(2,i-1))/2.
         omega_old  = (oldMESAfile(4,i) + oldMESAfile(4,i-1))/2.
 
-        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+        C6(i) = (4.*PI*MESAfile(6,i-1)*MESAfile(3,i-1)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
       end if
 
       C1(i) = radius**2 /delta_t
       C2(i) = radius_old**2 *omega_old /delta_t
       C3(i) = 0. !MESAfile(4,i)/(rho*R_sun**2)  !Jmodes
-      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*sqrt(nu)*delta_nu)
-      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*sqrt(nu)*delta_nu)
+      C4(i) = (16.*PI*R_sun**4 *radius**4 *rho)/(9.*M_sun*g_surf*dsqrt(nu)*delta_nu)
+      C5(i) = (4.*PI*MESAfile(6,i)*MESAfile(3,i)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
       
     end do
 

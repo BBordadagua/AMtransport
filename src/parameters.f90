@@ -22,17 +22,17 @@ MODULE parameters
   INTEGER, PARAMETER :: DP  = KIND(1.d0)
 
   !Constants
-  REAL (DP) :: G = 6.67259000e-08 !cm^3 g^-1 s^-2
+  REAL (DP) :: G = 6.67259000d-08 !cm^3 g^-1 s^-2
   REAL (DP) :: PI = 3.14159265358979d0
 
   !Solar values
-  REAl (DP) :: R_sun = 6.95700e10 !cm
-  REAl (DP) :: M_sun = 1.98847e33 !g
-  REAl (DP) :: L_sun = 3.846e33   !erg/s
-  REAl (DP) :: T_eff_sun = 5777   !K
-  REAl (DP) :: nu_max_sun = 3050  !μHz
-  REAl (DP) :: delta_nu_sun = 135 !μHz
-  REAL (DP) :: A_numax_sun = 20.!18.7 !+- 0.7 cm/s Kjeldsen et al.2008
+  REAl (DP) :: R_sun = 6.95700d10 !cm
+  REAl (DP) :: M_sun = 1.98847d33 !g
+  REAl (DP) :: L_sun = 3.846d33   !erg/s
+  REAl (DP) :: T_eff_sun = 5777d0   !K
+  REAl (DP) :: nu_max_sun = 3050d0  !μHz
+  REAl (DP) :: delta_nu_sun = 135d0 !μHz
+  REAL (DP) :: A_numax_sun = 20d0!18.7 !+- 0.7 cm/s Kjeldsen et al.2008
   !Vsun_max = 20.  # solar maximum at nu_max [cm/s] !Kevin Belkacem code
 
   !General properties of the model
@@ -61,7 +61,7 @@ MODULE parameters
     R_star        = (10**MESAfile(39,model))*R_sun
     nu_max_star   = MESAfile(63,model)
     delta_nu_star = MESAfile(61,model)
-    dt            = MESAfile(4,model)*365.*24.*60.*60.!*1.e-3!*5.e-4 !s
+    dt            = MESAfile(4,model)*365d0*24d0*60d0*60d0!*1.e-3!*5.e-4 !s
 
     !lmax = getlmax(summaryfile,MESAfile,model)
 
