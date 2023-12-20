@@ -161,7 +161,7 @@ SUBROUTINE ludcmp(a,n,np,indx,d)
   do i=1,n !Loop over rows to get the implicit scaling information. 
     aamax=0. 
     do j=1,n 
-      if (abs(a(i,j)).gt.aamax) aamax=abs(a(i,j)) 
+      if (dabs(a(i,j)).gt.aamax) aamax=dabs(a(i,j)) 
     enddo
     if (aamax.eq.0.) then!pause 'singular matrix in ludcmp' !No nonzero largest element. 
       stop
@@ -183,7 +183,7 @@ SUBROUTINE ludcmp(a,n,np,indx,d)
         sum=sum-a(i,k)*a(k,j) 
       enddo 
       a(i,j)=sum 
-      dum=vv(i)*abs(sum) !Figure of merit for the pivot. 
+      dum=vv(i)*dabs(sum) !Figure of merit for the pivot. 
       if (dum.ge.aamax) then !Is it better than the best so far? 
         imax=i 
         aamax=dum 
@@ -380,14 +380,12 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     & y,c,s,MESAfile,oldMESAfile,delta_t,nu_diff)
     implicit none 
     real (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff
-    real (DP), intent(in) :: conv,slowc,scalv(:) !! changed
-    real (DP), intent(inout) :: c(:,:,:),s(:,:),y(:,:)
+    real (DP), intent(in) :: conv,slowc !! changed
+    real (DP), intent(inout) :: c(:,:,:),s(:,:),y(:,:),scalv(:)
     integer, intent(in) :: itmax,m,ne,nb,indexv(:)
-    integer :: NMAX 
-    parameter (NMAX=10) !Largest expected value of ne.
     integer :: ic1,ic2,ic3,ic4,it,j,j1,j2,j3,j4,j5,j6,j7,j8, &
-    & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(NMAX)
-    real (DP) :: err,errj,fac,vmax,vz,ermax(NMAX)
+    & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(ne)
+    real (DP) :: err,errj,fac,vmax,vz,ermax(ne)
 
     s=0d0
     c=0d0
@@ -429,41 +427,60 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       call pinvs(ic1,ic2,j7,j9,jcf,k2+1,c,s)
       call bksub(ne,nb,jcf,k1,k2,c) !Backsubstitution. 
       err=0d0
+
+
       do j=1,ne !Convergence check, accumulate average error. 
+
+    !! scalv(1:nyj) contains typical sizes for each dependent variable, used to weight errors.
+        !! cesam2k20 version
+        !scalv = maxval(dabs(y(1:nrot_eq,:)),2) !! Cesam2k20
+        scalv(j) = maxval(dabs(y(j,:))) !! each variable has different scaling
+        !if (scalv(j) < 1.0d-20) scalv = 1.0d0
+
         jv=indexv(j) 
         errj=0d0
         km=0 !! this can't be zero 
         vmax=0d0 
         do k=k1,k2 !Find point with largest error, for each dependent variable. 
-          vz=abs(c(jv,1,k)) 
+          vz=dabs(c(jv,1,k)) 
           if(vz.gt.vmax) then 
             vmax=vz 
             km=k 
           endif 
           errj=errj+vz 
         enddo 
-        err=err+errj/scalv(j) !Note weighting for each dependent variable. 
-        ermax(j)=c(jv,1,km)/scalv(j) 
+        !err=err+errj/scalv(j) !Note weighting for each dependent variable. 
+        !ermax(j)=c(jv,1,km)/scalv(j) 
+        ermax(j)=dabs(c(jv,1,km))/scalv(j) !! Cesam2k20!
         kmax(j)=km 
       enddo 
-      err=err/nvars 
-      fac=slowc/max(slowc,err) !Reduce correction applied when error is large. 
+      
+      err = maxval(ermax) !! Cesam2k20
+      
+      !err=err/nvars 
+      !fac=slowc/max(slowc,err) !Reduce correction applied when error is large.
+      if(err > 1.0d2) then !! cesam2k20
+        fac = 10.0d0*slowc/max(slowc,err)
+      else
+        fac = slowc/max(slowc,err)
+      endif
+      
       do j=1,ne !Apply corrections. 
         jv=indexv(j) 
         do k=k1,k2 
-          if (jv == 1) write(9000,*) y(2,k),c(1,1,k), fac, err
-          if (jv == 2) write(8000,*) y(1,k),c(2,1,k), fac, err
+          !if (jv == 1) write(9000,*) y(2,k),c(1,1,k), fac, err, scalv(j)
+          !if (jv == 2) write(8000,*) y(1,k),c(2,1,k), fac, err, scalv(j)
           y(j,k)=y(j,k)-fac*c(jv,1,k) 
           
         enddo
-        if (jv == 1) write(9000,*) '  '
-        if (jv == 1) write(8000,*) '  '
+        !if (jv == 1) write(9000,*) '  '
+        !if (jv == 2) write(8000,*) '  '
       enddo 
       write(*,100) 'it',it,'   err',err,'   fac',fac
-      !!Summary of corrections for this step. Point with largest error for each 
-      !variable can be monitored by writing out kmax and ermax. 
-      print*, 'jv ', 1, 'kmax ',kmax(1), 'ermax ', ermax(1)
-      print*, 'jv ', 2, 'kmax ',kmax(2), 'ermax ', ermax(2)
+      !! Summary of corrections for this step. Point with largest error for each 
+      !! variable can be monitored by writing out kmax and ermax. 
+      !print*, 'jv ', 1, 'kmax ',kmax(1), 'ermax ', ermax(1)
+      !print*, 'jv ', 2, 'kmax ',kmax(2), 'ermax ', ermax(2)
       if(err.lt.conv) return 
     enddo
     !100 format(1x,i4,2f12.6)
@@ -515,10 +532,10 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     IMPLICIT NONE
     integer, intent(in) :: ie1,ie2,je1,jsf,jc1,k
     real (DP), intent(inout) :: c(:,:,:),s(:,:)!c(nci,ncj,nck),s(nsi,nsj)
-    INTEGER :: NMAX 
-    PARAMETER (NMAX=10) 
-    INTEGER :: i,icoff,id,ipiv,irow,j,jcoff,je2,jp,jpiv,js1,indxr(NMAX) 
-    REAL (DP) :: big,dum,piv,pivinv,pscl(NMAX)
+    !INTEGER :: NMAX 
+    !PARAMETER (NMAX=10) 
+    INTEGER :: i,icoff,id,ipiv,irow,j,jcoff,je2,jp,jpiv,js1,indxr(ie2)!(NMAX) 
+    REAL (DP) :: big,dum,piv,pivinv,pscl(ie2)!(NMAX)
 
     ipiv=0  !! added
     jpiv=0  !! added
@@ -530,9 +547,9 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       !Implicit pivoting, as in x2.1. 
       big=0d0
       do j=je1,je2 
-        if(abs(s(i,j)).gt.big) big=abs(s(i,j)) 
+        if(dabs(s(i,j)).gt.big) big=dabs(s(i,j)) 
       enddo 
-      if(big.eq.0.) then
+      if(big.eq.0d0) then
         print*, 'singular matrix, row all 0 in pinvs' 
         stop
       end if
@@ -546,9 +563,9 @@ SUBROUTINE inverse_matrix(a,n,np,y)
         if(indxr(i).eq.0) then 
           big=0d0 
           do j=je1,je2 
-            if(abs(s(i,j)).gt.big) then 
+            if(dabs(s(i,j)).gt.big) then 
               jp=j 
-              big=abs(s(i,j)) 
+              big=dabs(s(i,j)) 
             endif 
           enddo 
           if(big*pscl(i).gt.piv) then 
@@ -558,7 +575,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
           endif 
         endif 
       enddo 
-      if(s(ipiv,jpiv).eq.0.) then
+      if(s(ipiv,jpiv).eq.0d0) then
         print*, 'singular matrix in pinvs' 
         stop
       end if
@@ -572,7 +589,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       do i=ie1,ie2 
         !Reduce nonpivot elements in column. 
         if(indxr(i).ne.jpiv) then 
-          if(s(i,jpiv).ne.0.) then 
+          if(s(i,jpiv).ne.0d0) then 
             dum=s(i,jpiv) 
             do j=je1,jsf 
               s(i,j)=s(i,j)-dum*s(ipiv,j) 
@@ -643,8 +660,9 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     INTEGER, intent(in) :: jsf,k,k1,k2,indexv(:)
     REAL (DP), intent(inout) :: s(:,:)
     !INTEGER :: mm,n,i
-    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf!,r_dot
-    real (DP) :: C1,C2,C3,C4,C5,C6,C7,C8
+    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf,jmodes!,r_dot
+    real (DP) :: C1,C2,C7,C8,C9,cte,C10,C20,C11
+    !real (DP) :: C3,C4,C5,C6
      
 
     if(k.eq.k1) then !Boundary condition at first point. 
@@ -657,60 +675,85 @@ SUBROUTINE inverse_matrix(a,n,np,y)
       rho        = 0.5d0*(MESAfile(3,k) + MESAfile(3,k-1))
       g_surf     = 0.5d0*(MESAfile(6,k) + MESAfile(6,k-1))
       nu         = 0.5d0*(MESAfile(7,k) + MESAfile(7,k-1))
-      radius_old = 0.5d0*(oldMESAfile(2,k) + oldMESAfile(2,k-1)) !! skipping r=0
+      radius_old = 0.5d0*(oldMESAfile(2,k) + oldMESAfile(2,k-1))
       omega_old  = 0.5d0*(oldMESAfile(4,k) + oldMESAfile(4,k-1))
+      jmodes = 0.5d0*(MESAfile(5,k) + MESAfile(5,k-1))
 
-      C1 = (radius**2) /delta_t
-      C2 = ((radius_old**2) *omega_old) /delta_t
-      C3 = 0d0 !MESAfile(4,i)/(rho*(R_sun**2))  !Jmodes
-      C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun*g_surf*dsqrt(nu)*delta_nu)
-      C5 = (4d0*PI*MESAfile(6,k)*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
-      C6 = (4d0*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun*dsqrt(nu)*delta_nu)
-      C7 = nu_diff*(64d0*(PI**2)*(R_sun**2)/(9d0*(M_sun**2)*dsqrt(nu)*delta_nu))&
-      &*((MESAfile(2,k)**6)*(MESAfile(3,k)**2)/dsqrt(MESAfile(7,k)))
-      C8 = nu_diff*(64d0*(PI**2)*(R_sun**2)/(9d0*(M_sun**2)*dsqrt(nu)*delta_nu))&
-      &*((MESAfile(2,k-1)**6)*(MESAfile(3,k-1)**2)/dsqrt(MESAfile(7,k-1)))
+      C9 = delta_nu*dsqrt(nu)
+      C1 = (C9*radius*radius)/delta_t
+      C2 = (C9*(radius_old*radius_old)*omega_old) /delta_t
+
+      C10 = (C9*(radius*radius)*omega_old) /delta_t
+      C20 = (C9*2d0*radius*(radius-radius_old)) /dt
+
+      !C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun*g_surf)
+      !C5 = (4d0*PI*MESAfile(6,k)*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun)
+      !C6 = (4d0*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun)
+      !C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun)
+      !C5 = (4d0*PI*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun)
+      !C6 = (4d0*PI*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun)
+      
+      cte = nu_diff*(64d0*PI*PI*(R_sun**4))/(9d0*M_sun*M_sun)
+      C7 = cte*((MESAfile(2,k)**6)*(MESAfile(3,k)**2))
+      C8 = cte*((MESAfile(2,k-1)**6)*(MESAfile(3,k-1)**2))
+
+      !! jmodes
+      C11 = C9*jmodes/(R_sun*R_sun*rho)
 
     end if
-    
 
-    !C1 = 1d0/delta_t
-    !C2 = omega_old /delta_t
-    !C4 = 1d0/delta_nu
-    !C5 = nu_diff/delta_nu
-    !C6 = nu_diff/delta_nu
 
     !s=0d0 !! added makes matrix singular
     
     if(k.eq.k1) then !Boundary condition at first point. 
+      s(1,2+indexv(1))=0d0 
+      s(1,2+indexv(2))=1d0
+      s(1,jsf)=y(2,k1)
+
       s(2,2+indexv(1))=0d0
       s(2,2+indexv(2))=1d0
       s(2,jsf)=y(2,k1)
     
       !call printMatrix(s,2,5,7000)
     else if(k.gt.k2) then !Boundary conditions at last point. 
-      s(2,2+indexv(1))=0d0
+      s(1,2+indexv(1))=0d0 
+      s(1,2+indexv(2))=1d0
+      s(1,jsf)=y(2,k2)
+
+      s(2,2+indexv(1))=0d0 
       s(2,2+indexv(2))=1d0
       s(2,jsf)=y(2,k2)
   
       !call printMatrix(s,2,5,2000)
     else !Interior point. 
       s(1,indexv(1))=0.5d0*C1  !E1
-      s(1,indexv(2))=C6 !C8!C6
+      s(1,indexv(2))=C8!C6
       s(1,2+indexv(1))= 0.5d0*C1
-      s(1,2+indexv(2))=-C5 !-C7!-C5
+      s(1,2+indexv(2))=-C7!-C5
 
-      s(2,indexv(1))=C4 !1d0/delta_nu !C4     !E2
-      s(2,indexv(2))=0.5d0 
-      s(2,2+indexv(1))=-C4 !-1d0/delta_nu !-C4
-      s(2,2+indexv(2))=0.5d0
+      s(2,indexv(1))=1d0!C4      !E2
+      s(2,indexv(2))=0.5d0*C9 
+      s(2,2+indexv(1))=-1d0!-C4  !-C4
+      s(2,2+indexv(2))=0.5d0*C9
 
-      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)!&
+      !! joao expression
+      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)!&
       !!&-0.5d0*C3*(y(1,k)+y(1,k-1)) !E1
-      s(2,jsf)=0.5d0*(y(2,k)+y(2,k-1))-C4*(y(1,k)-y(1,k-1)) !E2
+      !s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-C4*(y(1,k)-y(1,k-1)) !E2
 
-      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C7*y(2,k)+C8*y(2,k-1) !E1
-      !s(2,jsf)=0.5d0*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1))/delta_nu !E2
+      !! expression with rdot
+      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C10 + 0.5d0*C20*(y(1,k)+y(1,k-1))-C7*y(2,k)+C8*y(2,k-1) !E1
+      !s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1)) !E2
+      !s(1,indexv(1))=0.5d0*(C1+C20)  !E1
+      !s(1,2+indexv(1))= 0.5d0*(C1+C20)
+
+      !! expression with rdot and jdot
+      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C10 + 0.5d0*C20*(y(1,k)+y(1,k-1))&
+      &-C7*y(2,k)+C8*y(2,k-1)-0.5d0*C11*(y(1,k)+y(1,k-1)) !E1
+      s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1)) !E2
+      s(1,indexv(1))=0.5d0*(C1+C20-C11)  !E1
+      s(1,2+indexv(1))= 0.5d0*(C1+C20-C11)
+
 
       !call printMatrix(s,2,5,3000)
     endif 

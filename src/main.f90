@@ -22,9 +22,9 @@ program main
   IMPLICIT NONE
   
   !variable declaration
-  integer :: NMESA,model,dmodel,i
-  integer :: status,modelini,modelend,version,mprofile,ri,rf,mnew,GYRE_var
-  real (DP), allocatable :: MESAhistory(:,:), MESAprofile(:,:),omega(:),F_total(:,:)
+  integer :: NMESA,model,dmodel
+  integer :: status,modelini,modelend,version,mprofile,mnew,GYRE_var !,ri,rf
+  real (DP), allocatable :: MESAhistory(:,:),MESAprofile(:,:),omega(:),F_total(:,:),MESAnewprofile(:,:)
   real (DP) ::  dummyvector(5)
   character(35) :: dummy
 
@@ -75,57 +75,64 @@ program main
   call set_variables(MESAhistory,modelini)
   call insertcol_MESAfile(modelini,1,dummyvector)
 
+  !! read MESAfirst current profile
+  mprofile = 5+getnlines('MESA/profile'//trim(string(modelini))//'.data.GYRE')
+  allocate(MESAprofile(19,mprofile))
+  open(301, action='read',file = 'MESA/profile'//trim(string(modelini))//'.data.GYRE')
+  read(301,*) dummy
+  read(301,*) MESAprofile
+  close(301)
+
+  !! set general variables of the model
+  call set_variables(MESAhistory,modelini)
+
+
   !! loop to get data of each model ----------------------------------------------
   do model = modelini,modelend,dmodel
 
-    !! read MESA profile
-    mprofile = getnlines('MESA/profile'//trim(string(model))//'.data.GYRE')
-    allocate(MESAprofile(19,mprofile+5))
-    open(301, action='read',file = 'MESA/profile'//trim(string(model))//'.data.GYRE')
-    read(301,*) dummy
-    read(301,*) MESAprofile
-    close(301)
-
-    !! set general variables of the model
-    !call set_variables(MESAhistory,modelini)
-    call set_variables(MESAhistory,model)
-
-    !! obtain radius of radiative region from MESA profile N2
-    call getradiativeR(ri,rf,MESAprofile)
-
-    !! run GYRE
-    if (GYRE_var == 0) then
-      call runGYRE(model)
-    end if 
+    !! read next mesa profile
+    mnew = 5+getnlines('MESA/profile'//trim(string(model+dmodel))//'.data.GYRE')
+    allocate(MESAnewprofile(19,mnew),omega(mnew))
+    open(200, action='read',file = 'MESA/profile'//trim(string(model+dmodel))//'.data.GYRE')
+    read(200,*) dummy
+    read(200,*) MESAnewprofile
+    close(200)
 
     !! compute mixed modes flux
-    allocate(F_total(3,size(MESAprofile,dim=2)))
-    F_total = 0d0
-    do i=1,size(MESAprofile,dim=2)
-      F_total(:,i) = i
-    end do
-    !call compute_flux(model,MESAprofile,F_total)
+    allocate(F_total(3,mnew))
+    if (GYRE_var == 0) then
+      call runGYRE(model) !! run GYRE
+      F_total = 0d0
+      call compute_flux(model,dmodel,MESAnewprofile,F_total)
+    else
+      open(2000, action='read',file = 'mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
+      read(2000,*) F_total
+      close(2000)
+    end if 
     
-    !! compute new rotation profile
-    mnew = 5+getnlines('MESA/profile'//trim(string(model+dmodel))//'.data.GYRE')
-    allocate(omega(mnew))
-    !call rot_profile_conserveAM(MESAprofile,omega,model+dmodel,mnew)
-    !!call rotation_profile(F_total,MESAprofile,omega,model+dmodel,mnew)
-    !call rotation_profile_implicit(F_total,MESAprofile,omega,model+dmodel,mnew)
-    !call rotation_profile_explicit(MESAprofile,omega,model+dmodel,mnew)
-    !call rotation_profile_CN_radiative(MESAprofile,omega,model+dmodel,mnew)
-    !call rotation_profile_CN_nonunigrid(MESAprofile,omega,model+dmodel,mnew,F_total)
-    call rotation_profile_Henyey(MESAprofile,omega,model+dmodel,mnew,F_total)
 
+    call set_variables(MESAhistory,model+dmodel)
+
+    !! compute new rotation profile
+    !omega = 0d0
+    !call rotation_profile_CN(MESAprofile,MESAnewprofile,omega,model+dmodel,F_total)
+    call rotation_profile_Henyey(MESAprofile,MESAnewprofile,omega,model+dmodel,F_total)
 
     !! insert new rotation profile in the next MESA profile
     call insertcol_MESAfile(model+dmodel,3,omega)
     
     !free the memory
-    deallocate(MESAprofile,omega,F_total)
+    deallocate(MESAprofile)
+    allocate(MESAprofile(19,mnew))
+    MESAprofile = MESAnewprofile !! current model is the previous next model
+    MESAprofile(19,:) = omega
+    mprofile = mnew
+
+    deallocate(omega,F_total,MESAnewprofile)
     
   end do
 
+  deallocate(MESAprofile)
   deallocate(MESAhistory)
 
 end program main

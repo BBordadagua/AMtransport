@@ -502,12 +502,12 @@ MODULE coefficient_equations
       !S_l2 = ((compute_cs2(array,i)* l*(l+1.))/r**2 )!*(G*M_star/(R_star**3))
 
 
-      !coeff(i) = (2.*abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *omega_rot(i)*alph*N2
-      coeff(i) = 2.*(abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *alph*N2!*omega_rot(i)
+      !coeff(i) = (2d0*abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *omega_rot(i)*alph*N2
+      coeff(i) = 2d0*(abs(m_mode**2)/(omega_R**2)) *rho*kr2*abs(xi_r)**2 *alph*N2!*omega_rot(i)
     
       if (j == 369) then
-        write (305,*) r, coeff(i), omega_rot(i),&
-        (2.*abs(m_mode**2)/(omega_R**2)),rho,kr2,abs(xi_r)**2,alph,N2!,compute_cs2(array,i)
+        write (305,*) r, coeff(i) !, omega_rot(i),&
+        !(2.*abs(m_mode**2)/(omega_R**2)),rho,kr2,abs(xi_r)**2,alph,N2!,compute_cs2(array,i)
         !&L_star,T,nabla,nabla_ad,compute_cp(array,i),V_2,((L_star)/(4.*PI*r**2 *rho*T)),(nabla_ad/nabla -1.),1./ds_dr
         !&(omega_R**2/compute_cs2(array,i)),(1. - S_l2/(omega_R**2)),(1. - N2/(omega_R**2)),S_l2,omega_R**2
       end if

@@ -8,8 +8,8 @@ Module rotationprofile_mod
   !define public subroutines and functions
   public :: insertcol_MESAfile, get_r_and_w, iniprofile,get_modelN
   public :: rotation_profile,rotation_profile_Henyey,rot_profile_conserveAM
-  public :: rotation_profile_CN_radiative,rotation_profile_CN_nonunigrid
-  public :: create_uniform_grid_size,create_uniform_grid,getG
+  public :: rotation_profile_CN
+  public :: getG
   contains
 
   function get_modelN(MESAhistory) result(model)
@@ -316,238 +316,23 @@ Module rotationprofile_mod
   end subroutine rot_profile_conserveAM
 
 
-  !function integration_coeff(MESAfile,F_total,k) result(C) !array with 33 entries
-    !implicit none
-    !real (DP), intent(in) :: F_total(:,:),MESAfile(:,:)
-    !integer, intent(in) :: k
-    !real (DP) :: r,r_k,r_k_1,r_t,omega_t,rho,rho_k,rho_k_1,nu,deltanu,g_small,g_k,c_p,T,p
-    !real (DP) :: C(33)
-
-    !C(1) = r**2/dt
-    !C(2) = r_t**2 * omega_t /dt
-    !C(3) = (8.*PI/15.)*(R_sun**2 /M_sun)*(rho_k*r_k**4)/(sqrt(nu)*deltanu)
-    !C(4) = (8.*PI/15.)*(R_sun**2 /M_sun)*(rho_k_1*r_k_1**4)/(sqrt(nu)*deltanu)
-    !C(5) = 0.
-    !C(6) = 0.
-    !C(7) = (M_sun/L_sun)*(nu**(3./2.) *g_small *c_p*rho*T)/(p*L_star)
-  !end function
-
- 
-
-
-  !!Crank-Nicolson
-  subroutine rotation_profile_CN_radiative(MESAold,omega,model,m)
-    implicit none
-    real (DP) :: AMi,AMf, delta_r, delta_t,nu_diff, o1, o2
-    real (DP), intent(inout) :: omega(:),MESAold(:,:)
-    real (DP), allocatable :: MESAfile(:,:),MESAold_int(:,:),MESA_unigrid(:,:)
-    real (DP), allocatable ::  omega_rad(:), radius(:),omega_old(:),rdot(:)
-    integer :: j,ri,rf,mold,i,mrad, m_nonuni,iter
-    integer, intent(in) :: model,m
-    character(len=18) :: dummy
-
-    !allocate arrays
-    allocate(MESAfile(19,m))
-    open(200, action='read',file = 'MESA/profile'//trim(string(model))//'.data.GYRE')
-      read(200,*) dummy
-      read(200,*) MESAfile
-    close(200)
-
-    mold = size(MESAold,dim=2) 
-    allocate(MESAold_int(4,m))
-
-    
-    !interpolation of MESA files ---------------------------------------------------------
-    MESAold_int(2,:) = interpolate(MESAold(3,:),MESAold(2,:),mold,MESAfile(3,:),m)
-    MESAold_int(3,:) = interpolate(MESAold(3,:),MESAold(7,:),mold,MESAfile(3,:),m)
-    MESAold_int(4,:) = interpolate(MESAold(3,:),MESAold(19,:),mold,MESAfile(3,:),m)
-    MESAold_int(1,:) = MESAfile(3,:)
-
-
-    !! create uniform grid
-    call getradiativeR(ri,rf,MESAfile)
-    m_nonuni = m-1!rf!-100 !! how many points before convective boundary
-    mrad = create_uniform_grid_size(MESAold_int,MESAfile,m_nonuni)
-    allocate(MESA_unigrid(4,mrad))
-    call create_uniform_grid(MESAold_int,MESAfile,MESA_unigrid,m_nonuni,delta_r)
-
-    !! compute rdot
-    allocate(rdot(m_nonuni))
-    do i=1,m_nonuni
-      rdot(i) = (MESAfile(2,i+1) - MESA_unigrid(2,i) )/MESA_unigrid(2,i)
-    end do
-    
-
-  !! compute rotation profile --------------------------------------------------------------
-  nu_diff = 1d7 !1.1d3 !min for stability
-  iter = 100
-  delta_t = 0.01*dt
-  omega_rad = CrankNicolson(MESA_unigrid,mrad,iter,delta_t,nu_diff,rdot)
-
-  !interpolation of to the original non uniform grid ---------------------------------------------------------
-  allocate(radius(m_nonuni),omega_old(m_nonuni))
-  do i=1,m_nonuni !skiping r=0
-    radius(i) = MESAold_int(2,i+1)
-  end do
-  omega_old = interpolate(MESA_unigrid(2,:),omega_rad,mrad,radius,m_nonuni)
-    !! r=0 is not being accounted !!!!!!!!
-
-  !convective envelope stays constant omega
-  omega(1) = omega_old(1)
-  do i=2,m
-    if (i > m_nonuni) then
-      omega(i) = omega_old(m_nonuni)
-    else
-      omega(i) = omega_old(i-1)
-    end if
-  end do
-
-
-    open(203, action='write',file = 'output/rot_'//trim(string(model))//'.txt')
-    
-    do j=1,m-1
-      write(203,*) MESAfile(2,j),MESAold_int(2,j),0.,0.,omega(j),MESAold_int(4,j),MESAold_int(3,j),&
-      &(MESAfile(2,j) - MESAold_int(2,j))/dt,MESAold_int(2,j+1) - MESAold_int(2,j),&
-      &MESAold_int(1,j+1) - MESAold_int(1,j)  
-    end do
-    close(203)
-
-    !! checking if AM is conserved
-    AMi = 0.
-    AMf = 0.
-    o1 = 0.
-    o2 = 0.
-    do j=1,m_nonuni
-      AMi = AMi + MESAold_int(2,j)**2 * MESAold_int(4,j)
-      AMf = AMf + MESAold_int(2,j)**2 *omega(j)
-      o1 = o1 + MESAold_int(4,j)
-      o2 = o2 + omega(j)
-      !write(203,*) MESA_unigrid(2,j),0,0,0,omega_rad(j)
-    end do
-    !print*, 'm_nonuniform grid = ',m_nonuni
-
-    print*, 'delta AM radiative zones = ', (AMf - AMi)/AMi, o2-o1
-    print*, 'AMinitial = ', AMi, ' AMfin = ', AMf 
-    print*, ' dt[s] = ',delta_t,' dt[yr] = ',delta_t/(365.*24.*60.*60.)
-    !print*,'dt-dtmin (stable<0) = ',delta_t - (delta_r**2)/(2.*nu_diff)
-    print*,'  '
-    
-    deallocate(omega_old,radius,omega_rad)
-    deallocate(MESAfile,MESAold_int,MESA_unigrid,rdot)
-
-  end subroutine rotation_profile_CN_radiative
-
-  subroutine create_uniform_grid(MESAold_int,MESAfile,MESA_unigrid,mrad,delta_r)
-    implicit none
-    integer :: ri,rf,i,muni_r
-    integer, intent(in) :: mrad
-    real (DP), intent(in) :: MESAold_int(:,:),MESAfile(:,:)
-    real (DP), intent(inout) :: MESA_unigrid(:,:), delta_r
-    real (DP), allocatable :: omega_old(:),radius_old(:),rho_old(:),mass_old(:),radius(:)
-    real (DP) :: rmin
-
-
-    !! compute radiative region radius -------------------------------------
-    ri=0.
-    rf=0.
-    call getradiativeR(ri,rf,MESAfile)
-    !mrad = rf - 100
-    allocate(omega_old(mrad),radius_old(mrad),rho_old(mrad),mass_old(mrad))
-    do i=1,mrad !skiping r=0
-      mass_old(i)   = MESAold_int(1,i+1)
-      radius_old(i) = MESAold_int(2,i+1)
-      rho_old(i)    = MESAold_int(3,i+1)
-      omega_old(i)  = MESAold_int(4,i+1)
-    end do
-
-    !! create uniform grid in radius only in radiative part (ignoring r=0)
-    rmin = 1.e20
-    do i=2,mrad
-      delta_r = MESAold_int(2,i+1) - MESAold_int(2,i)
-      if (delta_r < rmin) then
-        rmin = delta_r
-      end if
-    end do
-    delta_r = rmin
-
-    muni_r = int((MESAold_int(2,mrad+1) - MESAold_int(2,2))/delta_r)
-    if (muni_r > 8000) then
-      muni_r = 8000
-      delta_r = int((MESAold_int(2,mrad+1) - MESAold_int(2,2))/muni_r)
-    end if
-    print*,'muni_r ',muni_r, 'deltar = ',delta_r
-    !allocate(radius(muni_r),omega_rad(muni_r),rho(muni_r))
-
-    !! create new equally spaced radius
-    allocate(radius(muni_r))
-    radius(1) = MESAold_int(2,2) !ignoring r=0
-    do i=2,muni_r
-      radius(i) = radius(i-1) + delta_r
-    end do
-
-    !interpolation of for uniform grid ---------------------------------------------------------
-    MESA_unigrid(2,:) = radius
-    MESA_unigrid(3,:) = interpolate(radius_old,rho_old,mrad,radius,muni_r) !rho
-    MESA_unigrid(4,:) = interpolate(radius_old,omega_old,mrad,radius,muni_r) !omega
-    MESA_unigrid(1,:) = interpolate(radius_old,mass_old,mrad,radius,muni_r) !mass
-
-    deallocate(radius_old,radius,omega_old,rho_old,mass_old)
-
-  end subroutine create_uniform_grid
-
-  function create_uniform_grid_size(MESAold_int,MESAfile,mrad) result(muni_r)
-    implicit none
-    integer :: ri,rf,i, muni_r
-    integer, intent(in) :: mrad
-    real (DP), intent(in) :: MESAold_int(:,:),MESAfile(:,:)
-    real (DP) :: delta_r,rmin
-
-    !! compute radiative region radius -------------------------------------
-    ri=0.
-    rf=0.
-    call getradiativeR(ri,rf,MESAfile)
-    !mrad = rf - 100
-    !! create uniform grid in radius only in radiative part (ignoring r=0)
-    rmin = 1.e20
-    do i=2,mrad
-      delta_r = MESAold_int(2,i+1) - MESAold_int(2,i)
-      if (delta_r < rmin) then
-        rmin = delta_r
-      end if
-    end do
-    delta_r = rmin
-
-    muni_r = int((MESAold_int(2,mrad+1) - MESAold_int(2,2))/delta_r)
-    if (muni_r > 8000) then
-      muni_r = 8000
-      delta_r = int((MESAold_int(2,mrad+1) - MESAold_int(2,2))/muni_r)
-    end if
-
-  end function create_uniform_grid_size
-
   !! ---------------------------------------------------------------------------
-  !! ---------------------- Crank-Nicolson non-uniform grid ---------------------------
+  !! ---------------------- Crank-Nicolson at next model non-uniform grid ---------------------------
   !! ---------------------------------------------------------------------------
  
-  subroutine rotation_profile_CN_nonunigrid(MESAold,omega,model,m,F_total)
+  subroutine rotation_profile_CN(MESAold,MESAfile,omega,model,F_total)
     implicit none
     real (DP) :: AMi,AMf, delta_t,nu_diff,o1,o2 !, delta_r
-    real (DP), intent(inout) :: omega(:),MESAold(:,:)
-    real (DP), intent(in) :: F_total(:,:)
-    real (DP), allocatable :: MESAfile(:,:),MESAold_int(:,:),MESA_unigrid(:,:)
+    real (DP), intent(inout) :: omega(:)
+    real (DP), intent(in) :: F_total(:,:),MESAfile(:,:),MESAold(:,:)
+    real (DP), allocatable :: MESAold_int(:,:),Mo(:,:),Mn(:,:)
     real (DP), allocatable ::  omega_rad(:), r_dot(:)!, radius(:),omega_old(:)
-    integer :: j,mold,i, m_nonuni,iter,ri,rf !,mrad,
-    integer, intent(in) :: model,m
-    character(len=18) :: dummy
+    integer :: j,mold,i, mcn,iter,ri,rf,m !,mrad,
+    integer, intent(in) :: model
 
     !allocate arrays
-    allocate(MESAfile(19,m))
-    open(200, action='read',file = 'MESA/profile'//trim(string(model))//'.data.GYRE')
-      read(200,*) dummy
-      read(200,*) MESAfile
-    close(200)
-
     mold = size(MESAold,dim=2) 
+    m = size(MESAfile,dim=2) 
     allocate(MESAold_int(5,m))
 
     
@@ -556,58 +341,52 @@ Module rotationprofile_mod
     MESAold_int(3,:) = interpolate(MESAold(3,:),MESAold(7,:),mold,MESAfile(3,:),m)
     MESAold_int(4,:) = interpolate(MESAold(3,:),MESAold(19,:),mold,MESAfile(3,:),m)
     MESAold_int(1,:) = MESAfile(3,:)
-    MESAold_int(5,:) = interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAfile(3,:),m)
+    MESAold_int(5,:) = F_total(2,:)!interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAfile(3,:),m)
 
     
-    !! take r=0 from the arrays
+    !! include r=0 in the arrays
     call getradiativeR(ri,rf,MESAfile)
-    m_nonuni = m-1!rf-100 !! how many points before convective boundary
-    allocate(MESA_unigrid(5,m_nonuni))
-    do i=1,m_nonuni !skiping r=0
-      MESA_unigrid(1,i) = MESAold_int(1,i+1) !mass
-      MESA_unigrid(2,i) = MESAold_int(2,i+1) !radius
-      MESA_unigrid(3,i) = MESAold_int(3,i+1) !rho
-      MESA_unigrid(4,i) = MESAold_int(4,i+1) !omega
-      if (i>rf) then
-        MESA_unigrid(5,i) = 0d0
-      else
-        MESA_unigrid(5,i) = MESAold_int(5,i+1) !jdot
-      end if
-    end do
+    mcn = m!rf-100 !! how many points before convective boundary
+    allocate(Mo(5,mcn),Mn(5,mcn),r_dot(mcn))
+      Mo(1,:) = MESAold_int(1,:) !mass
+      Mo(2,:) = MESAold_int(2,:) !radius
+      Mo(3,:) = MESAold_int(3,:) !rho
+      Mo(4,:) = MESAold_int(4,:) !omega
 
-    open(300, action='write',file='output/total_flux_'//trim(string(model))//'.txt')
-    call printMatrix(MESA_unigrid, 5, m_nonuni,300)
-    close(300) 
+      Mn(1,:) = MESAfile(3,:) !mass
+      Mn(2,:) = MESAfile(2,:) !radius
+      Mn(3,:) = MESAfile(7,:) !rho
+      Mn(4,:) = MESAold_int(4,:) !omega
 
-    !! compute rdot
-    allocate(r_dot(m_nonuni))
-    do i=1,m_nonuni
-      r_dot(i) = (MESAfile(2,i+1) - MESA_unigrid(2,i) )/(MESA_unigrid(2,i)*dt)
-    end do
-    
+      do i=1,mcn
+        !! compute rdot
+        r_dot(i) = (Mn(2,i) - Mo(2,i) )/dt
+        if (i>rf) then
+          Mo(5,i) = 0d0
+          Mn(5,i) = 0d0
+        else
+          Mo(5,i) = MESAold_int(5,i) !jdot
+          Mn(5,i) = MESAold_int(5,i) !jdot
+        end if
+      end do
+
   !! compute rotation profile --------------------------------------------------------------
-  nu_diff = 1d7 !1.1d3 !min for stability
+  nu_diff = 1d7!1d7 !1.1d3 !min for stability
   iter = 100
   delta_t = 0.01d0*dt
-  omega_rad = CrankNicolson(MESA_unigrid,m_nonuni,iter,delta_t,nu_diff,r_dot)
+  omega_rad = CrankNicolson(Mn,mcn,iter,delta_t,nu_diff,r_dot)
 
   !convective envelope stays constant omega
-  omega(1) = omega_rad(1)
-  do i=2,m
-    if (i > m_nonuni) then
-      omega(i) = omega_rad(m_nonuni)
-    else
-      omega(i) = omega_rad(i-1)
-    end if
-  end do
-
-
+  omega = omega_rad
+  
     open(203, action='write',file = 'output/rot_'//trim(string(model))//'.txt')
-    
-    do j=1,m-1
-      write(203,*) MESAfile(2,j)/R_sun,MESAold_int(2,j)/R_sun,0.,0.,omega(j),MESAold_int(4,j),MESAold_int(3,j),&
-      &(MESAfile(2,j) - MESAold_int(2,j))/dt,MESAold_int(2,j+1) - MESAold_int(2,j),&
-      &MESAold_int(1,j+1) - MESAold_int(1,j)  
+    write(203,*) MESAfile(2,1)/R_sun,MESAold_int(2,1)/R_sun,0.,0.,omega(1),MESAold_int(4,1),&
+      &0d0
+    do j=2,m
+      write(203,*) MESAfile(2,j)/R_sun,MESAold_int(2,j)/R_sun,0.,0.,omega(j),MESAold_int(4,j),&
+      &(omega(j)-omega(j-1))/(MESAfile(2,j)/R_sun - MESAfile(2,j-1)/R_sun)
+      !MESAold_int(3,j),&
+      !&(MESAfile(2,j) - MESAold_int(2,j))/dt,MESAold_int(2,j+1) - MESAold_int(2,j),&
     end do
     close(203)
 
@@ -616,7 +395,7 @@ Module rotationprofile_mod
     AMf = 0.
     o1 = 0.
     o2 = 0.
-    do j=2,m_nonuni
+    do j=2,mcn
       AMi = AMi + MESAold_int(2,j)**2 * MESAold_int(4,j)
       AMf = AMf + MESAfile(2,j)**2 *omega(j)
       o1 = o1 + MESAold_int(4,j)
@@ -631,56 +410,62 @@ Module rotationprofile_mod
     !print*,'dt-dtmin (stable<0) = ',delta_t - (delta_r**2)/(2.*nu_diff)
     print*,'  '
     
-    deallocate(MESAfile,MESAold_int,MESA_unigrid,omega_rad,r_dot)
+    deallocate(MESAold_int,Mo,Mn,omega_rad,r_dot)
 
-  end subroutine rotation_profile_CN_nonunigrid
+  end subroutine rotation_profile_CN
 
   !! ---------------------------------------------------------------------------
   !! --------------------------------- Henyey Scheme ---------------------------
   !! ---------------------------------------------------------------------------
-  subroutine rotation_profile_Henyey(MESAold,omega,model,mmesa,F_total)
+  subroutine rotation_profile_Henyey(MESAold,MESAfile,omega,model,F_total)
     implicit none
     real (DP) :: delta_t,nu_diff,C4
-    real (DP), intent(in) :: F_total(:,:)
-    real (DP), intent(inout) :: omega(:),MESAold(:,:)
-    real (DP), allocatable :: MESAfile(:,:),MESAold_int(:,:),Mn(:,:),Mo(:,:)
-    integer :: ri,rf,mold,j,i,niter,maxi,l
-    integer, intent(in) :: model,mmesa
-    character(len=18) :: dummy
+    real (DP), intent(in) :: F_total(:,:),MESAfile(:,:),MESAold(:,:)
+    real (DP), intent(inout) :: omega(:)
+    real (DP), allocatable :: MESAold_int(:,:),Mn(:,:),Mo(:,:)
+    integer :: ri,rf,mold,j,i,niter,mmesa
+    integer, intent(in) :: model
     !! relaxation scheme variables
     integer :: ne,m,nb,nci,ncj,nck,nsi,nsj,nyj,nyk,itmax
     integer, allocatable :: indexv(:)
-    real (DP) :: conv, slowc,AMi,AMf,maxc
+    real (DP) :: conv, slowc,AMi,AMf
     real (DP), allocatable :: c(:,:,:),s(:,:),scalv(:),y(:,:)
 
     !allocate arrays
     mold = size(MESAold,dim=2)
-    allocate(MESAfile(19,mmesa),MESAold_int(5,mmesa),Mn(7,mmesa-1),Mo(4,mmesa-1))
-    open(200, action='read',file = 'MESA/profile'//trim(string(model))//'.data.GYRE')
-      read(200,*) dummy
-      read(200,*) MESAfile
-    close(200)
+    mmesa = size(MESAfile,dim=2)
+    allocate(MESAold_int(5,mmesa))
 
     !! interpolation of MESA files ---------------------------------------------------------
     MESAold_int(2,:) = interpolate(MESAold(3,:),MESAold(2,:),mold,MESAfile(3,:),mmesa) !radius
     MESAold_int(4,:) = interpolate(MESAold(3,:),MESAold(19,:),mold,MESAfile(3,:),mmesa) !omega
     !MESAold_int(1,:) = MESAfile(3,:) !mass
-    MESAold_int(3,:) = interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAfile(3,:),mmesa) !jdot
-    MESAold_int(5,:) = getG(model,mmesa) !g
+    MESAold_int(3,:) = F_total(2,:)!interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAfile(3,:),mmesa) !jdot
+    MESAold_int(5,:) = 1d0!getG(model,mmesa) !g
 
-    do j=1,mmesa-1 !skiping r=0
-      Mn(1,j) = MESAfile(3,j+1) !mass
-      Mn(2,j) = MESAfile(2,j+1)/R_sun !radius
-      Mn(3,j) = MESAfile(7,j+1) !rho
-      Mn(4,j) = MESAfile(19,j+1) !omega
-      Mn(5,j) = MESAold_int(3,j+1) !jdot
-      Mn(6,j) = MESAold_int(5,j+1) !1d0 !interpolate(MESAold(3,:),getG(model-1,mold),mold,MESAfile(3,:),mmesa) !g
-      Mn(7,j) = (MESAfile(3,j+1)/M_sun)**(2d0/3d0) !nu
+    allocate(Mn(7,mmesa),Mo(4,mmesa))
+    
+      Mn(1,:) = MESAfile(3,:) !mass
+      Mn(2,:) = MESAfile(2,:)/R_sun !radius
+      Mn(3,:) = MESAfile(7,:) !rho
+      Mn(4,:) = MESAfile(19,:) !omega
+      Mn(6,:) = MESAold_int(5,:) !1d0 !interpolate(MESAold(3,:),getG(model-1,mold),mold,MESAfile(3,:),mmesa) !g
+      Mn(7,:) = (MESAfile(3,:)/M_sun)**(2d0/3d0) !nu
+    
+      Mo(1,:) = MESAfile(3,:) !mass
+      Mo(2,:) = MESAold_int(2,:)/R_sun !radius
+      Mo(4,:) = MESAold_int(4,:) !omega
 
-      Mo(1,j) = MESAfile(3,j+1) !mass
-      Mo(2,j) = MESAold_int(2,j+1)/R_sun !radius
-      Mo(4,j) = MESAold_int(4,j+1) !omega
-    end do
+      call getradiativeR(ri,rf,MESAfile)
+      do i=1,mmesa
+        if (i>rf) then
+          Mn(5,i) = 0d0
+        else
+          Mn(5,i) = MESAold_int(3,i) !jdot
+        end if
+      end do
+    
+
 
     !! compute rotation profile --------------------------------------------------------------
     ri=0.
@@ -689,7 +474,7 @@ Module rotationprofile_mod
     omega = 0.
     
     !! relaxation method ------------------------------------------------------------------
-    m = mmesa-1 !rf !! radiative part !! total of mesh points
+    m = mmesa!mmesa-1 !rf !! radiative part !! total of mesh points
     ne = 2 !! The problem involves ne equations for ne adjustable dependent variables at each point
     nyj = ne !! number of dependent variables
     nyk = m !! total of mesh points
@@ -707,83 +492,61 @@ Module rotationprofile_mod
     allocate(indexv(ne),c(nci,ncj,nck),s(nsi,nsj),scalv(ne),y(ne,m))
     
     itmax=1000!100   !! maximum number of iterations
-    conv=5d-6  !! the convergence criterion
+    conv=1d-10!!Cesam2k20 !5d-6  !! the convergence criterion
     slowc=1d0    !! controls the fraction of corrections actually used after each iteration.
-    nu_diff = 1d7 !! difusion coefficient
-    delta_t = dt!0.001d0*dt !0.001d0*dt !0.01*dt !! timestep
-    niter = 1!1000
+    nu_diff = 1d7!1d7 !! difusion coefficient
+    delta_t = 0.001d0*dt!0.001d0*dt  !! timestep
+    niter = 1000
     
     !! indexv(j) describes which column of s(i,j) the variable y(j) has been put in
     !! The nb boundary conditions at the first mesh point must contain some dependence on the first nb variables listed in indexv
     indexv(1)=2 
     indexv(2)=1
 
-    !! scalv(1:nyj) contains typical sizes for each dependent variable, used to weight errors.
-    scalv(1) = 1d0     !abs(anorm) !!!  
-    scalv(2) = 1d0     !max(abs(anorm),y(2,M)) !!!change!!!
-
-    !! variables - initial guesses !!! change slightly so it doesnt cancel
+    !! variables - initial guesses !!! change slightly so it doesnt cancel and get singular matrix
     y(1,1)=Mo(4,1)
     y(1,m)=Mo(4,m)
     y(2,1)=0d0
     y(2,m)=0d0
-    maxc = 0d0
-    do j=2,m
+    do j=2,m-1
       y(1,j)=Mo(4,j) !! omega
 
-      C4 = (16d0*PI*(R_sun**4) *((0.5d0*(Mn(2,j)+Mn(2,j-1)))**4)&
-      & *(0.5d0*(Mn(3,j)+Mn(3,j-1))))&
-      &/(9d0*M_sun*(0.5d0*(Mn(6,j) + Mn(6,j-1)))*&
-      &dsqrt(0.5d0*(Mn(7,j)+Mn(7,j-1)))*(Mn(7,j)-Mn(7,j-1)))
+      !C4 = (16d0*PI*(R_sun**4) *((0.5d0*(Mn(2,j)+Mn(2,j-1)))**4)&
+      !& *(0.5d0*(Mn(3,j)+Mn(3,j-1))))&
+      !&/(9d0*M_sun*(0.5d0*(Mn(6,j) + Mn(6,j-1)))*&
+      !&dsqrt(0.5d0*(Mn(7,j)+Mn(7,j-1)))*(Mn(7,j)-Mn(7,j-1)))
 
       !C4 = 1d0/(Mn(7,j)-Mn(7,j-1))
-      !y(2,j)=-y(2,j-1)+2d0*C4*(y(1,j)-y(1,j-1))
-      y(2,j)=(y(1,j)-y(1,j-1)) !! derivative of omega
-
-      !write(5000,*) y(2,j),(y(1,j)-y(1,j-1)), C4,y(1,j),Mn(7,j)
-
-      if (C4 > maxc) then
-        maxc = C4
-        maxi = j
-      end if
+      !y(2,j)=C4*(y(1,j)-y(1,j-1)) !! derivative of omega
+      y(2,j)=(y(1,j)-y(1,j-1))/(dsqrt(0.5d0*(Mn(7,j)+Mn(7,j-1)))*(Mn(7,j)-Mn(7,j-1)))
 
       write(555,*) Mn(2,j), y(1,j), y(2,j),y(1,j)-y(1,j-1),C4
       
     end do
-    scalv(1) = abs(y(1,m))
-    scalv(2) = 1d0!maxc*max(abs(y(1,maxi)),y(2,maxi)) !C4*abs(y(1,m))!C4
-
-    
    
     do i=1,niter
+      if (i/=1) then
+        Mo(4,:) = y(1,:) !omega
+        y(2,1) = 0d0
+        y(2,m) = 0d0
+        do j=2,m-1
+          y(2,j)=(y(1,j)-y(1,j-1))/(dsqrt(0.5d0*(Mn(7,j)+Mn(7,j-1)))*(Mn(7,j)-Mn(7,j-1)))
+        end do
+      end if
       !! solve differential equations using relaxation scheme
       call solvde(itmax,conv,slowc,scalv,indexv,ne,nb,m,y,c,s,&
       &Mn,Mo,delta_t,nu_diff)
-
-      scalv(1) = abs(y(1,m))
-      maxc = 0d0
-      do l=1,m
-        if (y(2,m) > maxc) then
-          maxc = y(2,m)
-        end if
-      end do
-      scalv(2) = 1d0 !max(abs(y(1,m)),maxc) !C4*abs(y(1,m))!C4
-      Mo(4,:) = y(1,:) !omega
     end do
 
-    do j=1,m
-      omega(j+1) = y(1,j)
-    end do
-    omega(1) = y(1,1)
-    omega(mmesa) = y(1,m)
-
-    
+    omega = y(1,:)
 
     !! print final rotation profile for this model
     open(203, action='write',file = 'output/rot_'//trim(string(model))//'.txt')
-    write(203,*) 0d0,0d0,0.,0.,omega(1),0d0 ,y(2,1)
-    do j=2,m-1
-      write(203,*) Mn(2,j),Mo(2,j),0.,0.,omega(j),Mo(4,j) ,y(2,j)
+    write(203,*) 0d0,0d0,0.,0.,omega(1),0d0 ,y(2,1),0d0
+    do j=2,m
+      write(203,*) Mn(2,j),Mo(2,j),0.,0.,omega(j),Mo(4,j) ,y(2,j),&
+      &(omega(j)-omega(j-1))/(Mn(2,j)-Mn(2,j-1))
+      !&(omega(j)-omega(j-1))/(dsqrt(0.5d0*(Mn(7,j)+Mn(7,j-1)))*(Mn(7,j)-Mn(7,j-1)))
     end do
     close(203)
 
@@ -803,7 +566,7 @@ Module rotationprofile_mod
     555 format(A19, ES14.3)
     556 format(A6, ES14.3,A8,ES14.3)
 
-    deallocate(MESAfile,MESAold_int,c,s,scalv,indexv,y,Mn,Mo)
+    deallocate(MESAold_int,c,s,scalv,indexv,y,Mn,Mo)
   end subroutine rotation_profile_Henyey
 
 

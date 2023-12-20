@@ -15,11 +15,11 @@ Module compute_mixedmodesflux
 
   contains
   
-  subroutine compute_flux(model,MESAprofile,Flux)
+  subroutine compute_flux(model,dmodel,MESAprofile,Flux)
     implicit none
     integer :: Nsum,status,count,nsize,i,ncolumns,jsmallest,nlines,lsmallest,ri,rf
     integer, allocatable :: jarray(:)
-    integer, intent(in) :: model
+    integer, intent(in) :: model,dmodel
     real (DP), allocatable :: summaryfile(:,:), smalldetailfile(:,:),F_total(:,:)
     real (DP), intent(inout) :: Flux(:,:)
     real (DP), intent(in) :: MESAprofile(:,:)
@@ -64,26 +64,27 @@ Module compute_mixedmodesflux
     call sum_flux(nsize,model,jarray,smalldetailfile,nlines,ncolumns,F_total,MESAprofile,summaryfile)
 
     call getradiativeR(ri,rf,MESAprofile)
-    F_total(1,:) = smalldetailfile(15,:)*R_star/MESAprofile(2,rf) !radius normalized by base of convection zone
-    F_total(3,:) = smalldetailfile(3,:) !mass
+    !F_total(1,:) = smalldetailfile(15,:)*R_star/MESAprofile(2,rf) !radius normalized by base of convection zone
+    !F_total(3,:) = smalldetailfile(3,:) !mass
 
     !! save output of AM by mixed modes
     !open(300, action='write',file='output/total_flux_'//trim(string(model))//'.txt')
     !call printMatrix(F_total, 3, nlines,300)
     !close(300) 
 
-    F_total(1,:) = smalldetailfile(15,:)*R_star*MESAprofile(2,rf) 
-    F_total(3,:) = smalldetailfile(3,:) !mass
+    !F_total(1,:) = smalldetailfile(15,:)*R_star*MESAprofile(2,rf)
+    F_total(1,:) = smalldetailfile(15,:)*R_star !! radius in cm
+    F_total(3,:) = smalldetailfile(3,:) !mass in g
 
     !! interpolate mixed mode flux to have the same size as MESA profile
-    Flux(1,:) = interpolate(F_total(3,:),F_total(1,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2))
-    Flux(2,:) = interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2))
-    Flux(3,:) = MESAprofile(3,:) 
+    Flux(1,:) = interpolate(F_total(3,:),F_total(1,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2)) !! radius
+    Flux(2,:) = interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2)) !! jdot
+    Flux(3,:) = MESAprofile(3,:) !! mass
 
     !save output
-    !open(300, action='write',file='output/total_flux_'//trim(string(model))//'.txt')
-    !call printMatrix(Flux, 3, size(MESAprofile,dim=2),300)
-    !close(300) 
+    open(300, action='write',file='mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
+    call printMatrix(Flux, 3, size(MESAprofile,dim=2),300)
+    close(300) 
     
     deallocate(F_total,smalldetailfile,jarray,summaryfile)
 
