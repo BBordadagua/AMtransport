@@ -15,7 +15,7 @@ MODULE math_functions
   !define public subroutines and functions
   public :: spline,splint,interpolate
   public :: ludcmp,lubksb,inverse_matrix,tridag,invert_tridagmatrix
-  public :: bksub,difeq,pinvs,red,solvde !solve Relaxation scheme
+  public :: bksub,pinvs,red !solve Relaxation scheme
   public :: multiply_matrix_vector_triag
   
   contains
@@ -361,138 +361,6 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   END SUBROUTINE inverse_matrix
 
 
-  !USES bksub,difeq,pinvs,red
-  !Driver routine for solution of two point boundary value problems by relaxation. 
-  !itmax is the maximum number of iterations. conv is the convergence criterion 
-  !(see text). slowc controls the fraction of corrections actually used after each 
-  !iteration. scalv(1:nyj) contains typical sizes for each dependent variable, used 
-  !to weight errors. indexv(1:nyj) lists the column ordering of variables used to 
-  !construct the matrix s of derivatives. (The nb boundary conditions at the first 
-  !mesh point must contain some dependence on the first nb variables listed in indexv.)
-  !The problem involves ne equations for ne adjustable dependent variables at each 
-  !point. At the first mesh point there are nb boundary conditions. There are a total
-  !of m mesh points. y(1:nyj,1:nyk) is the two-dimensional array that contains the
-  !initial guess for all the dependent variables at each mesh point. On each 
-  !iteration, it is updated by the calculated correction. The arrays 
-  !c(1:nci,1:ncj,1:nck), s(1:nsi,1:nsj) supply dummy storage used by the relaxation 
-  !code; the minimum dimensions must satisfy: nci=ne, ncj=ne-nb+1, nck=m+1, nsi=ne, nsj=2*ne+1.
-  SUBROUTINE solvde(itmax,conv,slowc,scalv,indexv,ne,nb,m, &
-    & y,c,s,MESAfile,oldMESAfile,delta_t,nu_diff)
-    implicit none 
-    real (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff
-    real (DP), intent(in) :: conv,slowc !! changed
-    real (DP), intent(inout) :: c(:,:,:),s(:,:),y(:,:),scalv(:)
-    integer, intent(in) :: itmax,m,ne,nb,indexv(:)
-    integer :: ic1,ic2,ic3,ic4,it,j,j1,j2,j3,j4,j5,j6,j7,j8, &
-    & j9,jc1,jcf,jv,k,k1,k2,km,kp,nvars,kmax(ne)
-    real (DP) :: err,errj,fac,vmax,vz,ermax(ne)
-
-    s=0d0
-    c=0d0
-
-
-    k1=1 !Set up row and column markers. 
-    k2=m 
-    nvars=ne*m 
-    j1=1 
-    j2=nb 
-    j3=nb+1 
-    j4=ne 
-    j5=j4+j1 
-    j6=j4+j2 
-    j7=j4+j3 
-    j8=j4+j4 
-    j9=j8+j1 
-    ic1=1 
-    ic2=ne-nb 
-    ic3=ic2+1 
-    ic4=ne 
-    jc1=1 
-    jcf=ic3
-    do it=1,itmax 
-      !Primary iteration loop. 
-      k=k1 !Boundary conditions at first point. 
-      call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
-      call pinvs(ic3,ic4,j5,j9,jc1,k1,c,s) 
-      do k=k1+1,k2 
-        !Finite difference equations at all point pairs. 
-        kp=k-1 
-        call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
-        call red(ic1,ic4,j1,j2,j3,j4,j9,ic3,jc1,jcf,kp,c,s) 
-        call pinvs(ic1,ic4,j3,j9,jc1,k,c,s) 
-      enddo 
-      k=k2+1 !Final boundary conditions. 
-      call difeq(k,k1,k2,j9,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff) 
-      call red(ic1,ic2,j5,j6,j7,j8,j9,ic3,jc1,jcf,k2,c,s) 
-      call pinvs(ic1,ic2,j7,j9,jcf,k2+1,c,s)
-      call bksub(ne,nb,jcf,k1,k2,c) !Backsubstitution. 
-      err=0d0
-
-
-      do j=1,ne !Convergence check, accumulate average error. 
-
-    !! scalv(1:nyj) contains typical sizes for each dependent variable, used to weight errors.
-        !! cesam2k20 version
-        !scalv = maxval(dabs(y(1:nrot_eq,:)),2) !! Cesam2k20
-        scalv(j) = maxval(dabs(y(j,:))) !! each variable has different scaling
-        !if (scalv(j) < 1.0d-20) scalv = 1.0d0
-
-        jv=indexv(j) 
-        errj=0d0
-        km=0 !! this can't be zero 
-        vmax=0d0 
-        do k=k1,k2 !Find point with largest error, for each dependent variable. 
-          vz=dabs(c(jv,1,k)) 
-          if(vz.gt.vmax) then 
-            vmax=vz 
-            km=k 
-          endif 
-          errj=errj+vz 
-        enddo 
-        !err=err+errj/scalv(j) !Note weighting for each dependent variable. 
-        !ermax(j)=c(jv,1,km)/scalv(j) 
-        ermax(j)=dabs(c(jv,1,km))/scalv(j) !! Cesam2k20!
-        kmax(j)=km 
-      enddo 
-      
-      err = maxval(ermax) !! Cesam2k20
-      
-      !err=err/nvars 
-      !fac=slowc/max(slowc,err) !Reduce correction applied when error is large.
-      if(err > 1.0d2) then !! cesam2k20
-        fac = 10.0d0*slowc/max(slowc,err)
-      else
-        fac = slowc/max(slowc,err)
-      endif
-      
-      do j=1,ne !Apply corrections. 
-        jv=indexv(j) 
-        do k=k1,k2 
-          !if (jv == 1) write(9000,*) y(2,k),c(1,1,k), fac, err, scalv(j)
-          !if (jv == 2) write(8000,*) y(1,k),c(2,1,k), fac, err, scalv(j)
-          y(j,k)=y(j,k)-fac*c(jv,1,k) 
-          
-        enddo
-        !if (jv == 1) write(9000,*) '  '
-        !if (jv == 2) write(8000,*) '  '
-      enddo 
-      write(*,100) 'it',it,'   err',err,'   fac',fac
-      !! Summary of corrections for this step. Point with largest error for each 
-      !! variable can be monitored by writing out kmax and ermax. 
-      !print*, 'jv ', 1, 'kmax ',kmax(1), 'ermax ', ermax(1)
-      !print*, 'jv ', 2, 'kmax ',kmax(2), 'ermax ', ermax(2)
-      if(err.lt.conv) return 
-    enddo
-    !100 format(1x,i4,2f12.6)
-    100 format(A3,i4,A6,ES14.4,A6,ES14.3)
-
-    print*, 'itmax exceeded in solvde' !Convergence failed. 
-    stop
-    
-    return
-
-  END SUBROUTINE solvde
-
   !Backsubstitution, used internally by solvde. 
   SUBROUTINE bksub(ne,nb,jf,k1,k2,c)
     IMPLICIT NONE 
@@ -646,122 +514,7 @@ SUBROUTINE inverse_matrix(a,n,np,y)
   END SUBROUTINE red
 
 
-  !! Rewrite for the specific problem !!
-  !The only information returned from difeq to solvde is the matrix of derivatives 
-  !s(i,j); all other arguments are input to difeq and should not be altered. 
-  !k indicates the current mesh point, or block number. k1,k2 label the first and 
-  !last point in the mesh. If k=k1 or k>k2, the block involves the boundary conditions
-  !at the first or final points; otherwise the block acts on FDEs coupling variables
-  !at points k-1, k.
-  !Returns matrix s(i,j) for solvde. 
-  SUBROUTINE difeq(k,k1,k2,jsf,indexv,s,y,MESAfile,oldMESAfile,delta_t,nu_diff)
-    IMPLICIT NONE 
-    REAL (DP), intent(in) :: MESAfile(:,:), delta_t, oldMESAfile(:,:),nu_diff,y(:,:)
-    INTEGER, intent(in) :: jsf,k,k1,k2,indexv(:)
-    REAL (DP), intent(inout) :: s(:,:)
-    !INTEGER :: mm,n,i
-    real (DP) :: delta_nu,radius,rho,nu,radius_old,omega_old,g_surf,jmodes!,r_dot
-    real (DP) :: C1,C2,C7,C8,C9,cte,C10,C20,C11
-    !real (DP) :: C3,C4,C5,C6
-     
-
-    if(k.eq.k1) then !Boundary condition at first point. 
   
-    else if(k.gt.k2) then !Boundary conditions at last point. 
-   
-    else !Interior point. 
-      delta_nu   = MESAfile(7,k) - MESAfile(7,k-1)
-      radius     = 0.5d0*(MESAfile(2,k) + MESAfile(2,k-1))
-      rho        = 0.5d0*(MESAfile(3,k) + MESAfile(3,k-1))
-      g_surf     = 0.5d0*(MESAfile(6,k) + MESAfile(6,k-1))
-      nu         = 0.5d0*(MESAfile(7,k) + MESAfile(7,k-1))
-      radius_old = 0.5d0*(oldMESAfile(2,k) + oldMESAfile(2,k-1))
-      omega_old  = 0.5d0*(oldMESAfile(4,k) + oldMESAfile(4,k-1))
-      jmodes = 0.5d0*(MESAfile(5,k) + MESAfile(5,k-1))
-
-      C9 = delta_nu*dsqrt(nu)
-      C1 = (C9*radius*radius)/delta_t
-      C2 = (C9*(radius_old*radius_old)*omega_old) /delta_t
-
-      C10 = (C9*(radius*radius)*omega_old) /delta_t
-      C20 = (C9*2d0*radius*(radius-radius_old)) /dt
-
-      !C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun*g_surf)
-      !C5 = (4d0*PI*MESAfile(6,k)*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun)
-      !C6 = (4d0*PI*MESAfile(6,k-1)*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun)
-      !C4 = (16d0*PI*(R_sun**4)*(radius**4) *rho)/(9d0*M_sun)
-      !C5 = (4d0*PI*MESAfile(3,k)*(MESAfile(2,k)**2)*nu_diff)/(M_sun)
-      !C6 = (4d0*PI*MESAfile(3,k-1)*(MESAfile(2,k-1)**2)*nu_diff)/(M_sun)
-      
-      cte = nu_diff*(64d0*PI*PI*(R_sun**4))/(9d0*M_sun*M_sun)
-      C7 = cte*((MESAfile(2,k)**6)*(MESAfile(3,k)**2))
-      C8 = cte*((MESAfile(2,k-1)**6)*(MESAfile(3,k-1)**2))
-
-      !! jmodes
-      C11 = C9*jmodes/(R_sun*R_sun*rho)
-
-    end if
-
-
-    !s=0d0 !! added makes matrix singular
-    
-    if(k.eq.k1) then !Boundary condition at first point. 
-      s(1,2+indexv(1))=0d0 
-      s(1,2+indexv(2))=1d0
-      s(1,jsf)=y(2,k1)
-
-      s(2,2+indexv(1))=0d0
-      s(2,2+indexv(2))=1d0
-      s(2,jsf)=y(2,k1)
-    
-      !call printMatrix(s,2,5,7000)
-    else if(k.gt.k2) then !Boundary conditions at last point. 
-      s(1,2+indexv(1))=0d0 
-      s(1,2+indexv(2))=1d0
-      s(1,jsf)=y(2,k2)
-
-      s(2,2+indexv(1))=0d0 
-      s(2,2+indexv(2))=1d0
-      s(2,jsf)=y(2,k2)
-  
-      !call printMatrix(s,2,5,2000)
-    else !Interior point. 
-      s(1,indexv(1))=0.5d0*C1  !E1
-      s(1,indexv(2))=C8!C6
-      s(1,2+indexv(1))= 0.5d0*C1
-      s(1,2+indexv(2))=-C7!-C5
-
-      s(2,indexv(1))=1d0!C4      !E2
-      s(2,indexv(2))=0.5d0*C9 
-      s(2,2+indexv(1))=-1d0!-C4  !-C4
-      s(2,2+indexv(2))=0.5d0*C9
-
-      !! joao expression
-      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C2-C5*y(2,k)+C6*y(2,k-1)!&
-      !!&-0.5d0*C3*(y(1,k)+y(1,k-1)) !E1
-      !s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-C4*(y(1,k)-y(1,k-1)) !E2
-
-      !! expression with rdot
-      !s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C10 + 0.5d0*C20*(y(1,k)+y(1,k-1))-C7*y(2,k)+C8*y(2,k-1) !E1
-      !s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1)) !E2
-      !s(1,indexv(1))=0.5d0*(C1+C20)  !E1
-      !s(1,2+indexv(1))= 0.5d0*(C1+C20)
-
-      !! expression with rdot and jdot
-      s(1,jsf)=0.5d0*C1*(y(1,k)+y(1,k-1))-C10 + 0.5d0*C20*(y(1,k)+y(1,k-1))&
-      &-C7*y(2,k)+C8*y(2,k-1)-0.5d0*C11*(y(1,k)+y(1,k-1)) !E1
-      s(2,jsf)=0.5d0*C9*(y(2,k)+y(2,k-1))-(y(1,k)-y(1,k-1)) !E2
-      s(1,indexv(1))=0.5d0*(C1+C20-C11)  !E1
-      s(1,2+indexv(1))= 0.5d0*(C1+C20-C11)
-
-
-      !call printMatrix(s,2,5,3000)
-    endif 
-
-    
-    return 
-
-  END SUBROUTINE difeq
 
   !! multiplication of matrix and vector v with a tridiagonal matrix
   !! input are 3 arrays that define the diagonal d, below diagonal b and above diagonal a of matrix
@@ -789,7 +542,6 @@ SUBROUTINE inverse_matrix(a,n,np,y)
     deallocate(a,b,d)
 
   end function multiply_matrix_vector_triag
-
 
 
 END MODULE math_functions

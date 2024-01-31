@@ -1,28 +1,34 @@
 Module compute_mixedmodesflux
     use parameters
     use coefficient_equations
-    use compute_modeamplitude
     use data_handling
     use math_functions
-    !use meridionalcirculation_mod
-    !use rotationprofile_mod
-    !use numerical_scheme
 
   IMPLICIT NONE
 
 
   public :: compute_flux, sum_flux
+  public :: computel0,compute_amplitude
 
   contains
   
-  subroutine compute_flux(model,dmodel,MESAprofile,Flux)
+  subroutine compute_flux(model,dmodel)
     implicit none
-    integer :: Nsum,status,count,nsize,i,ncolumns,jsmallest,nlines,lsmallest,ri,rf
+    integer :: Nsum,status,count,nsize,i,ncolumns,jsmallest,nlines,lsmallest!,ri,rf
     integer, allocatable :: jarray(:)
     integer, intent(in) :: model,dmodel
     real (DP), allocatable :: summaryfile(:,:), smalldetailfile(:,:),F_total(:,:)
-    real (DP), intent(inout) :: Flux(:,:)
-    real (DP), intent(in) :: MESAprofile(:,:)
+    real (DP), allocatable :: GYREprofile(:,:)   
+    integer :: mprofile 
+    character(35) :: dummy
+
+    !! read MESA current profile.GYRE.data
+    mprofile = 5+getnlines('MESA/profile'//trim(string(model))//'.data.GYRE')
+    allocate(GYREprofile(19,mprofile))
+    open(301, action='read',file = 'MESA/profile'//trim(string(model))//'.data.GYRE')
+    read(301,*) dummy
+    read(301,*) GYREprofile
+    close(301)
 
 
     !! allocate the GYRE summary file array
@@ -60,10 +66,10 @@ Module compute_mixedmodesflux
 
     
     !! compute F_total
-    F_total(2,:) = 0.
-    call sum_flux(nsize,model,jarray,smalldetailfile,nlines,ncolumns,F_total,MESAprofile,summaryfile)
+    F_total(2,:) = 0d0
+    call sum_flux(nsize,model,jarray,smalldetailfile,nlines,ncolumns,F_total,GYREprofile,summaryfile)
 
-    call getradiativeR(ri,rf,MESAprofile)
+    !call getradiativeR(ri,rf,GYREprofile,0)
     !F_total(1,:) = smalldetailfile(15,:)*R_star/MESAprofile(2,rf) !radius normalized by base of convection zone
     !F_total(3,:) = smalldetailfile(3,:) !mass
 
@@ -74,19 +80,15 @@ Module compute_mixedmodesflux
 
     !F_total(1,:) = smalldetailfile(15,:)*R_star*MESAprofile(2,rf)
     F_total(1,:) = smalldetailfile(15,:)*R_star !! radius in cm
+    F_total(2,:) = F_total(2,:) ! jmodes
     F_total(3,:) = smalldetailfile(3,:) !mass in g
-
-    !! interpolate mixed mode flux to have the same size as MESA profile
-    Flux(1,:) = interpolate(F_total(3,:),F_total(1,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2)) !! radius
-    Flux(2,:) = interpolate(F_total(3,:),F_total(2,:),size(F_total,dim=2),MESAprofile(3,:),size(MESAprofile,dim=2)) !! jdot
-    Flux(3,:) = MESAprofile(3,:) !! mass
 
     !save output
     open(300, action='write',file='mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
-    call printMatrix(Flux, 3, size(MESAprofile,dim=2),300)
+    call printMatrix(F_total, 3, nlines ,300)
     close(300) 
     
-    deallocate(F_total,smalldetailfile,jarray,summaryfile)
+    deallocate(F_total,smalldetailfile,jarray,summaryfile,GYREprofile)
 
   end subroutine compute_flux
 
@@ -114,7 +116,7 @@ Module compute_mixedmodesflux
       &'.j'//trim(string(jarray(i)))//'.txt',detailfile)
         
       !! compute coefficient of the mixed modes
-      coeff = 0.
+      coeff = 0d0
       !! full equation
       !call calculate_gwaves(detailfile,m,summaryfile,jarray(i),coeff,MESAprofile)
       !call calculate_coefficients(detailfile,m,summaryfile,jarray(i),coeff,MESAprofile)
@@ -124,11 +126,11 @@ Module compute_mixedmodesflux
       call calculate_simplifiedeq(detailfile,summaryfile,jarray(i),coeff,MESAprofile)
 
       !! compute amplitude of the modes
-      amp_ml = 0.
+      amp_ml = 0d0
       call compute_amplitude(detailfile,summaryfile,jarray(i),amp_ml)
 
       !! sum flux over all modes
-      coeff(1)=0.
+      coeff(1)=0d0
       F_total(2,:) = F_total(2,:) + interpolate(detailfile(15,:),amp_ml*coeff,m,smalldetailfile(15,:),nlines)
         
       deallocate(detailfile,coeff)
@@ -137,8 +139,6 @@ Module compute_mixedmodesflux
 
   end subroutine sum_flux
 
-
-      
 
       !derive gwaves to give jdot
       !F_total(1,:) = smalldetailfile(15,:)*R_star
@@ -162,7 +162,65 @@ Module compute_mixedmodesflux
       !  F_total(2,i) = F_total(3,i)
       !end do
 
-       
+    
+  subroutine compute_amplitude(array,summaryfile,j,amp_ml)
+    implicit none
+    real (DP), intent(in) :: array(:,:), summaryfile(:,:)
+    real (DP), intent(inout) :: amp_ml
+    real (DP) ::  V2,omega_R, axi2,freq,Enorm0,Enorml,inertia_ratio
+    integer, intent(in) :: j
+    integer :: m
+
+    freq = summaryfile(5,j)
+    Enorm0 = summaryfile(1,getj_l0(summaryfile,freq))
+    Enorml = summaryfile(1,j)
+    inertia_ratio = Enorm0/Enorml
+
+    m = size(array,dim=2)
+    V2 = computel0(freq)*inertia_ratio
+    omega_R = freq*10**(-6.)*2.*PI
+
+    axi2 = 2.*V2/(omega_R**2)
+    amp_ml = axi2/(abs(array(18,m))**2)
+
+    !# computation of raidative damping    !Kevin Belkacem code
+    !omega = 2.*pi*final
+    !eta_rad=zeros((len(omega)))
+    !eta_sun = 0.9*1e-6*pi
+    !for i in range(0,len(omega),1):
+	    !eta_rad[i] = (ell*(ell+1.))**(1.5)/8./pi/omega[i]**3/theta_g[i]
+	    !tmp_eta = (gradad/grad-1.)*gradad*BV*g*L/P/r**5
+	    !eta_rad[i] = eta_rad[i] * trapz(tmp_eta[1:i_cut],r[1:i_cut])
+	    !eta_p = eta_sun * (T_eff/Tsun)**(12.)
+
+
+    !! print amplitude info
+    !write(50,*) summaryfile(8,j),freq, sqrt(V2),summaryfile(5,getj_l0(summaryfile,freq)),&
+    !& sqrt(computel0(summaryfile(5,getj_l0(summaryfile,freq)))), amp_ml,m!,abs(array(2,5))
+    
+
+  end subroutine
+
+
+  function computel0(freq) result(V_final2)
+    implicit none
+    real (DP), intent(in) :: freq
+    real (DP) :: V_final2,Vmax, sigma , delta_env
+
+    Vmax = A_numax_sun * (T_eff_star/T_eff_sun)**(-0.77) * (nu_max_star/nu_max_sun)**(-1.15) * (delta_nu_star/delta_nu_sun)**(0.65)
+    !Vmax = A_numax_sun * (T_eff_star/T_eff_sun)**(-0.77) * (nu_max_star/nu_max_sun)**(-1.15) * (delta_nu_star/delta_nu_sun)**(0.55)
+    !Vmax = 300.
+
+    !computation of radial mode amplitudes (Gaussian enveloppe)
+    delta_env = (2.37+0.77*M_star/M_sun) * delta_nu_star   !! Eq.(4) Mosser et al. (2012) !RGB
+    !delta_env = 30.
+    sigma = delta_env/(2.*sqrt(2.*log(2.)))
+
+
+    V_final2 = Vmax**2 * exp(-((freq-nu_max_star)**(2)) / (2.*sigma**2))
+
+  end function computel0
+
 
 
     end module compute_mixedmodesflux

@@ -5,7 +5,7 @@ F90FLAGS=-fdefault-real-8 -O2 -g -fcheck=all -Wall
 
 SRCDIR=src
 
-SOURCE= parameters.f90 data_handling_mod.f90 mathfunctions_mod.f90 coefficients_mod.f90 modeamplitude_mod.f90 numscheme_mod.f90 rotationprofile_mod.f90 mixedmodesflux.f90 main.f90
+SOURCE= parameters.f90 data_handling_mod.f90 mathfunctions_mod.f90 coefficients_mod.f90 numscheme_mod.f90 rotationprofile_mod.f90 mixedmodesflux.f90 main.f90
 OBJECTS=$(SOURCE:.f90=.o)
 
 all:

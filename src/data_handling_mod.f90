@@ -48,7 +48,7 @@ subroutine readfile(filename,filearray)
   implicit NONE
   real (DP), intent(inout):: filearray(:,:)
   character(len=*), intent(in) :: filename
-  character(len=19) :: dummy
+  character(len=50) :: dummy
   
   open(100, action='read',file=trim(filename))
     read(100,*) dummy
@@ -130,31 +130,43 @@ subroutine getsmallestfile(sumfile,jarray,jfinal,nlines,model)
 end subroutine getsmallestfile
 
 
-subroutine getradiativeR(ri,rf,filearray)
+subroutine getradiativeR(ri,rf,filearray,value)
   implicit none
   integer, intent(inout) :: ri, rf
   real(DP), intent(in) :: filearray(:,:)
   integer :: N,i, counti
+  integer, intent(in) :: value !! defines if we use the GYRE file(0) or the MESA profile(1)
 
   N = size(filearray,dim=2)
 
   counti=0
-  do i=1,N
-    ! for RC star !filearray(2,i)/R_star >0.001
-    !if (filearray(9,i) >0. .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.001) then
-    if (filearray(9,i) >0d0 .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6d0) then
-      counti=1
-      ri = i!filearray(2,i)
-    end if
-
-
-    ! for RC star !filearray(2,i)/R_star >0.1
-    !if (filearray(9,i) <0. .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.1) then
-    if (filearray(9,i) <0d0 .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6d0) then
-      rf = i-1!filearray(2,i-1)
-      counti = 2
-    end if
-  end do
+  if (value ==0) then !! for GYRE file
+    do i=1,N
+      ! for RC star !filearray(2,i)/R_star >0.001
+      !if (filearray(9,i) >0. .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.001) then
+      if (filearray(9,i) >0d0 .AND. counti==0 .AND. filearray(2,i)/R_star < 0.6d0) then
+        counti=1
+        ri = i!filearray(2,i)
+      end if
+      ! for RC star !filearray(2,i)/R_star >0.1
+      !if (filearray(9,i) <0. .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6 .AND. filearray(2,i)/R_star >0.1) then
+      if (filearray(9,i) <0d0 .AND. counti==1 .AND. filearray(2,i)/R_star < 0.6d0) then
+        rf = i-1!filearray(2,i-1)
+        counti = 2
+      end if
+    end do
+  else if (value == 1) then !! for MESA file
+    do i=1,N
+     if (filearray(31,i) >0d0 .AND. counti==0 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
+        counti=1
+        ri = i
+      end if
+      if (filearray(31,i) <0d0 .AND. counti==1 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
+        rf = i-1
+        counti = 2
+      end if
+    end do
+  end if
 
 end subroutine getradiativeR
 

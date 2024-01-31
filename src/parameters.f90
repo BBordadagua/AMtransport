@@ -12,7 +12,7 @@
 MODULE parameters
   IMPLICIT NONE
 
-  public :: set_variables!,getlmax
+  public :: set_parameters!,getlmax
 
   ! numerical precision
   INTEGER, PARAMETER :: I4B = SELECTED_INT_KIND(9)
@@ -22,8 +22,9 @@ MODULE parameters
   INTEGER, PARAMETER :: DP  = KIND(1.d0)
 
   !Constants
-  REAL (DP) :: G = 6.67259000d-08 !cm^3 g^-1 s^-2
+  REAL (DP) :: G = 6.67259000d-08 !!cm^3 g^-1 s^-2
   REAL (DP) :: PI = 3.14159265358979d0
+  REAL (DP) :: c_speed = 2.99792458d10 !!cm/s
 
   !Solar values
   REAl (DP) :: R_sun = 6.95700d10 !cm
@@ -50,7 +51,7 @@ MODULE parameters
 
   contains
 
-  subroutine set_variables(MESAfile,model)
+  subroutine set_parameters(MESAfile,model) !!MESA version 23.05.1
     implicit none
     integer, intent(in) :: model
     real (DP), intent(in)::  MESAfile(:,:)
@@ -59,9 +60,9 @@ MODULE parameters
     T_eff_star    = 10**MESAfile(37,model)
     L_star        = (10**MESAfile(38,model))*L_sun
     R_star        = (10**MESAfile(39,model))*R_sun
-    nu_max_star   = MESAfile(63,model)
-    delta_nu_star = MESAfile(61,model)
-    dt            = MESAfile(4,model)*365d0*24d0*60d0*60d0!*1.e-3!*5.e-4 !s
+    nu_max_star   = MESAfile(57,model)
+    delta_nu_star = MESAfile(56,model)
+    dt            = (10**MESAfile(4,model))*365d0*24d0*60d0*60d0 !s
 
     !lmax = getlmax(summaryfile,MESAfile,model)
 
