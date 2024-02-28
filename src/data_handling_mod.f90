@@ -156,16 +156,29 @@ subroutine getradiativeR(ri,rf,filearray,value)
       end if
     end do
   else if (value == 1) then !! for MESA file
+    !! for RGB
+    !do i=1,N
+    ! if (filearray(33,i) >0d0 .AND. counti==0 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
+    !    counti=1
+    !    ri = i
+    !  end if
+    !  if (filearray(33,i) <0d0 .AND. counti==1 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
+    !    rf = i-1
+    !    counti = 2
+    !  end if
+    !end do
+
+    !! for MS
     do i=1,N
-     if (filearray(31,i) >0d0 .AND. counti==0 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
-        counti=1
-        ri = i
-      end if
-      if (filearray(31,i) <0d0 .AND. counti==1 .AND. (10**filearray(3,i))*R_sun/R_star < 0.6d0) then
-        rf = i-1
-        counti = 2
-      end if
-    end do
+      if (filearray(33,i) >0d0 .AND. counti==0) then
+         counti=1
+         ri = i
+       end if
+       if (filearray(33,i) <0d0 .AND. counti==1) then
+         rf = i-1
+         counti = 2
+       end if
+     end do
   end if
 
 end subroutine getradiativeR

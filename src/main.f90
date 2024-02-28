@@ -20,10 +20,10 @@ program main
   IMPLICIT NONE
   
   !variable declaration
-  integer :: NMESA,model,dmodel,mmodes
+  integer :: NMESA,model,dmodel,mmodes,count
   integer :: status,modelini,modelend,version,mprofile,GYRE_var
   real (DP), allocatable :: MESAhistory(:,:),GYREfile(:,:)
-  real (DP), allocatable :: omega(:),F_total(:,:),omega_old(:)
+  real (DP), allocatable :: y(:,:),F_total(:,:),y_old(:,:)
   real (DP) ::  dummyvector(5)
 
   !! user settings ----------------------------------------------------------------
@@ -73,8 +73,11 @@ program main
   call set_parameters(MESAhistory,modelini)
 
   mprofile = 5+getnlines('MESA/profile'//trim(string(modelini))//'.data.GYRE')
-  allocate(omega_old(mprofile),GYREfile(18,mprofile))
-  omega_old = iniprofile(GYREfile,mprofile,modelini,1)!! compute initial rotation profile
+  allocate(y_old(5,mprofile),GYREfile(18,mprofile))
+  y_old = 0d0
+  y_old(1,:) = 3e-5!iniprofile(GYREfile,mprofile,modelini,1)!! compute initial rotation profile
+  count = 0
+  
   
   !! loop to get data of each model ----------------------------------------------
   do model = modelini,modelend,dmodel
@@ -86,30 +89,34 @@ program main
       call compute_flux(model,dmodel) !! compute mixed modes flux
     else
       mprofile = getnlines('MESA/profile'//trim(string(model+dmodel))//'.data')
-      allocate(omega(mprofile))
+      allocate(y(5,mprofile))
       
       !! get jmodes from file
-      mmodes = 6+getnlines('mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
-      allocate(F_total(3,mmodes))
-      open(2000, action='read',file = 'mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
-      read(2000,*) F_total
-      close(2000)
+      !mmodes = 6+getnlines('mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
+      !allocate(F_total(3,mmodes))
+      !open(2000, action='read',file = 'mixed_modes/total_flux_'//trim(string(model+dmodel))//'.txt')
+      !read(2000,*) F_total
+      !close(2000)
+      allocate(F_total(3,100)) !! For MS stars
+      F_total = 1d0 !! For MS stars
+      
 
       call set_parameters(MESAhistory,model+dmodel)
-
+      
       !! compute new rotation profile
-      call rotation_profile_Henyey(omega,model,dmodel,F_total,omega_old)
-      !call rotation_profile_CN_new(omega,model,dmodel,F_total,omega_old)
-
-      deallocate(omega_old)
-      allocate(omega_old(mprofile))
-      omega_old = omega
-      deallocate(F_total,omega)
+      call rotation_profile_relaxationscheme_tot(y,model,dmodel,F_total,y_old,count)
+      !call rotation_profile_Henyey(y(1,:),model,dmodel,F_total,y_old(1,:))
+      !call rotation_profile_CN_new(y(1,:),model,dmodel,F_total,y_old(1,:))
+      
+      deallocate(y_old)
+      allocate(y_old(5,mprofile))
+      y_old = y
+      deallocate(F_total,y)
       
     end if
   end do
 
-  if (GYRE_var /= 0) deallocate(omega_old)
+  if (GYRE_var /= 0) deallocate(y_old)
 
   deallocate(MESAhistory,GYREfile)
 

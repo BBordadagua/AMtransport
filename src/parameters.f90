@@ -25,6 +25,7 @@ MODULE parameters
   REAL (DP) :: G = 6.67259000d-08 !!cm^3 g^-1 s^-2
   REAL (DP) :: PI = 3.14159265358979d0
   REAL (DP) :: c_speed = 2.99792458d10 !!cm/s
+  REAL (DP) :: a_raddensity = 7.5646d-15 !!erg cm^-3 K^-4 !!radiation density constant
 
   !Solar values
   REAl (DP) :: R_sun = 6.95700d10 !cm
