@@ -7,8 +7,21 @@ Module numerical_scheme
   !define public subroutines and functions
   public :: variables
   public :: CrankNicolson_new,create_matrix_diffusionCN_new,get_CNcoeff
-  public :: difeq,difeq_total,constants,solvde,constants_tot
+  public :: difeq,difeq_total,constants,solvde,constants_tot,smoothing_func
   contains
+
+  function smoothing_func(y,k1,k2) result(s)
+    implicit none
+    real (DP), intent(in) :: y(:)
+    integer, intent(in) :: k1,k2
+    real (DP) :: s(k2)
+    integer :: k
+    s=y
+    do k=k1+3,k2-3
+      s(k) = y(k-2) + 2d0*y(k-1) + 3d0*y(k) + 2d0*y(k+1) + y(k+2)
+      s(k) = s(k)/9d0
+    end do
+  end function
 
   subroutine variables(k1,k2,Mn,Mo,delta_t,var)
     implicit none
@@ -16,9 +29,10 @@ Module numerical_scheme
     real (DP), intent(in) :: Mn(:,:), delta_t, Mo(:,:)
     integer, intent(in) :: k1,k2
     integer :: k,k1o,k2o,m
+    real (DP) :: nu1,nu2,dnu
 
     !! variables computed using derivatives !!only for interior points
-    var(33,k1) = 0d0 !check
+    !var(33,k1) = 0d0 !check
     var(37,k1) = 0d0 !check
 
     do k=k1,k2
@@ -51,8 +65,10 @@ Module numerical_scheme
       var(23,k) = Mn(11,k)    !! HT !!not sure!!
       var(24,k) = (4d0*a_raddensity*c_speed*var(11,k)**3)/(3d0*var(4,k)*var(4,k)*var(10,k)*var(34,k))    !! grand K thermal conductivity
       var(25,k) = Mn(20,k)    !! eps_nuc 
-      if (var(25,k)>0d0) var(26,k) = Mn(22,k)    !! eps_t 
-      if (var(25,k)>0d0) var(27,k) = var(17,k)*Mn(21,k)    !! eps_mu !phi_e*ro/eps_nuc*depsro Cesam
+      !if (var(25,k)>0d0) 
+      var(26,k) = Mn(22,k)    !! eps_t 
+      !if (var(25,k)>0d0) 
+      var(27,k) = var(17,k)*Mn(21,k)    !! eps_mu !phi_e*ro/eps_nuc*depsro Cesam
       var(28,k) = 3d0-Mn(28,k)/var(34,k)+var(18,k)*(1d0+Mn(27,k)/var(34,k))  !! chi_t 
       var(29,k) = -var(17,k)*(1d0+Mn(27,k)/var(34,k)) !! chi_mu
       var(30,k) = Mn(12,k)*R_sun !R_sun**2 *var(3,k)**2 *var(12,k)/(G*M_sun*var(4,k)*Mn(2,k))     !! Hp
@@ -60,9 +76,12 @@ Module numerical_scheme
       var(32,k) = delta_t !! delta_t
       if (k/=k1) var(33,k) =  (dlog(var(13,k))-dlog(var(13,k-1)))&
         &/(dlog(var(2,k))-dlog(var(2,k-1)))!! dln L/dln m  !! according to page 146 cesam is correct
+      var(33,k1) = var(33,k1+1) !! shouldn't it be zero?
         
       !if (k/=k1) var(36,k) = (y(3,k)-y(3,k-1))/((var(1,k)-var(1,k-1))) !! for Dh
       if (k/=k1) var(37,k) = (dlog(var(4,k))-dlog(var(4,k-1)))/((var(1,k)-var(1,k-1))) !! for Dh
+      var(37,k1) = var(37,k1+1) !! not sure!!
+
       var(38,k) = Mn(35,k) !! brunt_N2_composition_term !N2_mu
       var(39,k) = Mn(34,k) !! brunt_N2_structure_term  !N2_T
       var(40,k) = Mn(33,k) !! Brunt N2
@@ -81,6 +100,26 @@ Module numerical_scheme
       var(44,:) = 0.5d0*(Mo(4,k1o)*(10**Mo(2,k1o))**2 *(Mn(2,k1o)**(1d0/3d0)) + Mo(4,1)*(10**Mo(2,1))**2 *(Mn(2,1)**(1d0/3d0)))*&
       & ((Mn(2,k1o)**(2d0/3d0))-(Mn(2,1)**(2d0/3d0)))!! Ibot_t
 
+    end do
+
+    !! compute integration boundary conditions I_top
+    var(41,:) = 0d0
+    var(42,:) = 0d0
+    m = size(Mn,dim=2)
+    do k=k2,m
+      if (k == k2) then
+        nu1 = Mn(2,k2)**(2d0/3d0)
+        nu2 = Mn(2,k2+1)**(2d0/3d0)
+      else if (k == m) then
+        nu1 = Mn(2,m-1)**(2d0/3d0)
+        nu2 = Mn(2,m)**(2d0/3d0)
+      else
+        nu1 = Mn(2,k-1)**(2d0/3d0)
+        nu2 = Mn(2,k+1)**(2d0/3d0)
+      end if
+      dnu = 0.5d0*(nu2-nu1)*dsqrt(Mn(2,k))
+      var(41,:) = var(41,:) + dnu*(10**Mn(3,k))*(10**Mn(3,k))
+      var(42,:) = var(42,:) + dnu*(10**Mo(2,k))*(10**Mo(2,k))*Mo(4,k) 
     end do
 
   end subroutine variables
@@ -131,8 +170,6 @@ Module numerical_scheme
     end do
 
     
-
-
     deallocate(nu12,nu32,delta_nu,var_k,var,y1,y2,y3)!,y4,y5)
   end subroutine constants
 
@@ -145,7 +182,7 @@ Module numerical_scheme
     integer :: k
     real (DP),allocatable :: nu12(:),nu32(:),delta_nu(:),var_k(:,:),var(:,:)
     real (DP),allocatable :: y1(:),y2(:),y3(:)!,y4(:),y5(:)
-    real (DP) :: aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10
+    real (DP) :: aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,nu_kin
 
     allocate(nu12(size(var_old,dim=2)),nu32(size(var_old,dim=2)),&
     &delta_nu(size(var_old,dim=2)),var_k(size(var_old,dim=1),size(var_old,dim=2)),&
@@ -188,7 +225,15 @@ Module numerical_scheme
 
       cte(44,k) = aux1*y(1,k)*(aux2 + aux3*y(3,k) - (3d0/2d0)*y(2,k)*y(3,k)/y(1,k)) - aux4*y(1,k)*y(3,k) !!Dh^2(k)
       cte(44,k) = sqrt(abs(cte(44,k))) !!Dh(k)
-      
+
+      !! computing Dh(k) CESAM version
+      aux1 = ((var(22,k)*8d0*PI*R_sun**6)/(9d0*M_sun*dsqrt(var_k(1,k))))*var_k(4,k)*var_k(3,k)**6 !!C1
+      aux2 = ((var(22,k)*8d0*PI*R_sun**6)/(9d0*M_sun*dsqrt(var_k(1,k))))*var_k(4,k)*var_k(3,k)**6 *var(37,k) &
+      & - (var(22,k)*R_sun**3 * var_k(3,k)**3) /3d0 !!C2
+      aux3 = (var(22,k)*4d0*PI*R_sun**6 *var_k(4,k)*var_k(3,k)**6)/(3d0*M_sun*dsqrt(var_k(1,k))) !!C3
+      cte(44,k) = aux1*y(1,k)*var(36,k) + aux2*y(1,k)*y(3,k) - aux3*y(2,k)*y(3,k)*dsqrt(var_k(1,k)) 
+      cte(44,k) = sqrt(abs(cte(44,k)))
+
       !! computing Dh middle point
       aux5 = (var(22,k)*8d0*PI*R_sun**6 /(9d0*M_sun))*var(4,k)*var(3,k)**6
       aux6 = var_k(36,k)/nu12(k)
@@ -203,11 +248,12 @@ Module numerical_scheme
       aux10 = var_k(38,k)+var_k(39,k)
       if (k/=k1) cte(46,k) = aux9*y(2,k)*y(2,k)*&
                 & (cte(44,k))*((cte(44,k))+var_k(24,k))/((cte(44,k))*aux10 + (var_k(24,k)*var_k(38,k))) !!Dv
+                
 
       !! using a power law
-      cte(44,k) = (var_k(3,k))**(3d0/2d0)*1d7
-      cte(45,k) = (var(3,k))**(3d0/2d0)*1d7
-      cte(46,k) = (var(3,k))**(3d0/2d0)*1d4
+      !cte(44,k) = (var_k(3,k))**(3d0/2d0)*1d7
+      !cte(45,k) = (var(3,k))**(3d0/2d0)*1d7
+      !cte(46,k) = (var(3,k))**(3d0/2d0)*1d4
 
       !cte(44,k) = 5d4 * var_k(3,k)*R_sun*abs(y(3,k)) !Formalisme simplified Castro, Vauclair & Richard
       !cte(45,k) = 5d4 * var(3,k)*R_sun*abs(y3(k))
@@ -215,7 +261,34 @@ Module numerical_scheme
 
       !write(607,*) var(3,k),cte(45,k),cte(44,k),cte(46,k)
       !cte(46,k) = 1d-7!1d7 !!Dv
+
+      nu_kin = 7d0
+      if (cte(44,k) <= nu_kin .and. (var_k(3,k) < 0.5d0) ) then
+        cte(44,k) = nu_kin
+        cte(45,k) = nu_kin
+        cte(46,k) = nu_kin
+      else
+        !! computing Dv(k) CESAM version
+        aux9 = (1d0/6d0)*(64d0*PI*PI*R_sun**6 *var_k(3,k)**6 *var_k(4,k)**2)/(9d0*M_sun*M_sun)
+        aux10 = 1d0 + var_k(24,k)/cte(44,k)
+        aux11 = var_k(39,k) + var(38,k)*aux10
+        cte(46,k) = aux9*cte(44,k)*aux10*y(2,k)*y(2,k)/aux11
+        
+
+        if (cte(46,k) > nu_kin) then
+          cte(46,k) = cte(46,k) + nu_kin
+        else
+          cte(46,k) = nu_kin
+        end if
+      end if
       
+    end do
+
+    !! smoothing Dh Dv
+    !var(44,:) = smoothing_func(var(44,:),k1,k2)
+    !var(46,:) = smoothing_func(var(46,:),k1,k2)
+
+    do k=k1,k2 
       cte(1,k) = delta_nu(k)*nu12(k)
       cte(2,k) = (cte(1,k)*var(3,k)*var(3,k))/var_k(32,k)  !C1 cesam
       cte(3,k) = (cte(1,k)*var(8,k)*var(8,k)*var(9,k)) /var_k(32,k)  !C2 cesam
@@ -227,10 +300,10 @@ Module numerical_scheme
       if (k/=k1) cte(8,k) = cte(1,k)*var_k(5,k-1)/(R_sun*R_sun*var_k(4,k-1)) !! mixed modes 
       cte(9,k) = ((8d0*PI*R_sun*R_sun)/(15d0*M_sun))*var_k(4,k)*var_k(3,k)**4 !C3 cesam
       if (k/=k1) cte(10,k) = ((8d0*PI*R_sun*R_sun)/(15d0*M_sun))*var_k(4,k-1)*var_k(3,k-1)**4 !C4 cesam
+      !cte(11,k) = (M_sun/L_sun)*(nu32(k)*var(6,k)*var(10,k)*var(4,k)*var(11,k)/(var(12,k)*var(13,k)))*&
+      !        &(var(14,k)-var(15,k)+var(17,k)*var(16,k)/var(18,k)) !C7 cesam
       cte(11,k) = (M_sun/L_sun)*(nu32(k)*var(6,k)*var(10,k)*var(4,k)*var(11,k)/(var(12,k)*var(13,k)))*&
-              &(var(14,k)-var(15,k)+var(17,k)*var(16,k)/var(18,k)) !C7 cesam
-      write(2001,*) var(3,k),var(17,k)*var(16,k)/var(18,k),var(17,k),var(16,k),1d0/var(18,k)
-
+              &abs(var(14,k)-var(15,k)+var(17,k)*var(16,k)/var(18,k)) !C7 cesam !modified
       cte(12,k) = -(M_sun/(L_sun*var(32,k)))*(nu32(k)*var(10,k)*var(11,k)*var(9,k)*var(19,k)/(var(13,k)*var(18,k))) !C8 cesam
       cte(13,k) = 8d0*R_sun*var(3,k)/(3d0*var(6,k)) !C9 cesam
       cte(14,k) = var(33,k) - var(20,k)*var(20,k)/(2d0*PI*G*var(21,k)) !C10 cesam
@@ -413,20 +486,20 @@ Module numerical_scheme
       
       !! Omega y(1,:) ------------------------------------------------------------------------------
       !! derivatives dE/dy(k-1)
-      s(1,indexv(1))=0.5d0*cte(2,k)!+cte(10,k)*y(3,k-1) !-0.5d0*cte(8,k) !mixedmodes
+      s(1,indexv(1))=0.5d0*cte(2,k)+cte(10,k)*y(3,k-1) !-0.5d0*cte(8,k) !mixedmodes
       s(1,indexv(2))=cte(6,k)
-      s(1,indexv(3))=0d0!cte(10,k)*y(1,k-1)
+      s(1,indexv(3))=cte(10,k)*y(1,k-1)
       s(1,indexv(4))=0d0
       s(1,indexv(5))=0d0
       !! derivatives dE/dy(k)
-      s(1,5+indexv(1))=0.5d0*cte(2,k)!-cte(9,k)*y(3,k) !-0.5d0*cte(7,k) !mixedmodes
+      s(1,5+indexv(1))=0.5d0*cte(2,k)-cte(9,k)*y(3,k) !-0.5d0*cte(7,k) !mixedmodes
       s(1,5+indexv(2))=-cte(5,k)
-      s(1,5+indexv(3))=0d0!-cte(9,k)*y(1,k)
+      s(1,5+indexv(3))=-cte(9,k)*y(1,k)
       s(1,5+indexv(4))=0d0
       s(1,5+indexv(5))=0d0
       !! equation E1
       s(1,jsf) = cte(2,k)*y1 - cte(3,k)&
-        !&-cte(9,k)*y(1,k)*y(3,k) + cte(10,k)*y(1,k-1)*y(3,k-1)& !! meridional circ
+        &-cte(9,k)*y(1,k)*y(3,k) + cte(10,k)*y(1,k-1)*y(3,k-1)& !! meridional circ
         &-cte(5,k)*y(2,k) + cte(6,k)*y(2,k-1)!&                  !! diffusion
         !& -0.5d0*cte(7,k)*y(1,k) - 0.5d0*cte(8,k)*y(1,k-1)      !! mixed modes
         !&-cte(7,k)*y1                                           !! mixed modes
@@ -475,7 +548,7 @@ Module numerical_scheme
         & - cte(25,k)*y5 &
         & - cte(26,k)*psi
 
-      !! A y(4,:) ----------------------------------------------------------------
+      !! Upsilon y(4,:) ----------------------------------------------------------------
       aux5 = cte(27,k)*cte(34,k)*cte(43,k)
       aux6 = 0.5d0*(cte(1,k)-cte(28,k)*cte(35,k))*cte(41,k)
       aux7 = 0.5d0*(cte(29,k)+cte(28,k)*cte(32,k))
@@ -589,11 +662,11 @@ Module numerical_scheme
 
     
     do it=1,itmax 
-      if (value == 0) then
-        call constants(k1,k2,cte,var,y)
-      else 
-        call constants_tot(k1,k2,cte,var,y)
-      end if
+      !if (value == 0) then
+      !  call constants(k1,k2,cte,var,y)
+      !else 
+      !  call constants_tot(k1,k2,cte,var,y)
+      !end if
       
       open(1004, action='write',file='output/it'//trim(string(it))//'.txt')
       do i=k1,k2

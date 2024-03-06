@@ -488,7 +488,7 @@ Module rotationprofile_mod
     allocate(Mn(35,mmesa),Mo(10,mmesa))!,Mo(6,mmesa))
     call get_MESAfiles_tot(Mn,Mo,model,dmodel,y_old,jmodes)
     
-    Mo(4,:) = 3e-5!3d-7 !! omega old constant !! changed
+    !Mo(4,:) = 3e-5!3d-7 !! omega old constant !! changed
 
     !! print initial rotation profile for this model ------------------------------------------
     open(203, action='write',file = 'output/inirot_'//trim(string(model))//'.txt')
@@ -516,7 +516,7 @@ Module rotationprofile_mod
     itmax=1000!100   !! maximum number of iterations
     conv=1d-10!!Cesam2k20 !5d-6  !! the convergence criterion
     slowc=1d0    !! controls the fraction of corrections actually used after each iteration.
-    niter = 10!10 !! iterations for smaller timesteps
+    niter = 1!10 !! iterations for smaller timesteps
     delta_t = dt/niter !! timestep
 
     !! The arrays c(1:nci,1:ncj,1:nck), s(1:nsi,1:nsj) supply dummy storage used by the relaxation code
@@ -624,15 +624,13 @@ Module rotationprofile_mod
   end subroutine rotation_profile_relaxationscheme_tot
 
 
-
-
   subroutine set_initialguess(k1,k2,cte,var,y,value)
     implicit none
     real (DP), intent(inout) :: cte(:,:),y(:,:),var(:,:)
     integer, intent(in) :: k1,k2,value
     integer :: k
     real (DP), allocatable :: y1(:),y2(:),y4(:),y5(:),psi,psik,psik_1
-    real (DP) :: aux1, aux2, aux3, aux4
+    real (DP) :: aux1, aux2, aux3, aux4,aux5
 
     !! variables - initial guesses
     open(1001, action='write',file='initial_guess.txt')
@@ -676,33 +674,47 @@ Module rotationprofile_mod
 
       
       do k=k1+1,k2
-        psi = cte(35,k)*y1(k)*cte(41,k)*y2(k) !- cte(32,k)*y5(k)
-        psik = cte(33,k)*y(1,k)*cte(42,k)*y(2,k) !- cte(30,k)*y(5,k)
-        psik_1 = cte(34,k)*y(1,k-1)*cte(43,k)*y(2,k-1)!-cte(31,k)*y(5,k-1)
+        !psi = cte(35,k)*y1(k)*cte(41,k)*y2(k) !- cte(32,k)*y5(k)
+        !psik = cte(33,k)*y(1,k)*cte(42,k)*y(2,k) !- cte(30,k)*y(5,k)
+        !psik_1 = cte(34,k)*y(1,k-1)*cte(43,k)*y(2,k-1)!-cte(31,k)*y(5,k-1)
 
         !! A
-        y(4,k1) = 0d0 !!boundary condition !!not sure
-        y(4,k) = cte(27,k)*(psik-psik_1)/cte(1,k) &
-          & + cte(28,k)*psi/cte(1,k) &
-          !- cte(29,k)*y5(k)/cte(1,k) &
-          & - y1(k)*cte(41,k)*y2(k)
+        !y(4,k1) = 0d0 !!boundary condition !!not sure
+        !y(4,k) = cte(27,k)*(psik-psik_1)/cte(1,k) &
+        !  & + cte(28,k)*psi/cte(1,k) &
+        !  !- cte(29,k)*y5(k)/cte(1,k) &
+        !  & - y1(k)*cte(41,k)*y2(k)
 
-        y4(k) = 0.5d0*(y(4,k)+y(4,k-1))
+        !y4(k) = 0.5d0*(y(4,k)+y(4,k-1))
+
+        y(4,:) = 0d0
+        y4 = 0d0
         
 
         !! U2
-        aux1 = 1d0-cte(40,k)*y1(k)*y1(k)
-        !aux2 = cte(23,k)+cte(24,k)*aux1
-        aux4 = cte(13,k)*(-1d0+cte(14,k)+2d0*cte(15,k)*y1(k)*y1(k))
-        y(3,k1) = 0d0!!boundary condition
-        y(3,k) = (cte(12,k)*aux1 &
-              & - aux4*y1(k)*y1(k) + cte(13,k)*cte(15,k)*y1(k)**4 &
+        !aux1 = 1d0-cte(40,k)*y1(k)*y1(k)
+        !!aux2 = cte(23,k)+cte(24,k)*aux1
+        !aux4 = cte(13,k)*(-1d0+cte(14,k)+2d0*cte(15,k)*y1(k)*y1(k))
+        !y(3,k1) = 0d0!!boundary condition
+        !y(3,k) = (cte(12,k)*aux1 &
+         !     & - aux4*y1(k)*y1(k) + cte(13,k)*cte(15,k)*y1(k)**4 &
               !& + cte(16,k)*(y(4,k)-y(4,k-1)) &
               !& + aux2*cte(41,k)*y1(k)*y2(k) &
               !& + cte(20,k)*y4(k) &
               !& + cte(25,k)*y5(k) &
               !& + cte(26,k)*psi &
-              &)/(cte(11,k)*aux1)
+         !     &)/(cte(11,k)*aux1)
+
+        !! Cesam initial condition
+        y(3,k) = 0d0
+        aux1 = (8d0*L_sun*R_sun**5 )/(3d0*G**2 *M_sun**3)
+        aux2 = (var(12,k)*var(13,k)*var(3,k)**5)/((var(2,k)**3)*var(10,k)*var(4,k)*var(11,k))
+        aux3 = 1d0 - var(33,k)
+        aux4 = var(14,k) - var(15,k)
+        aux5 = (3d0*L_sun*var(34,k)*var(13,k)*var(12,k))/(16d0*PI*a_raddensity*c_speed*M_sun*G*var(2,k)*var(11,k)**4) !! gradrad
+        if (aux5<var(14,k)) y(3,k) = -(y(1,1)**2)*aux1*aux2*aux3/aux4 !! negative was added!!
+        y(3,k2) = 0d0 !!boundary condition
+        
         
       if (k==k1+1) then
         write(1001,*) var(2,k1),var(3,k1), y(1,k1),y(2,k1),y(3,k1),y(4,k1),y(5,k1), &
